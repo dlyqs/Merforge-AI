@@ -1,0 +1,46 @@
+# Test-only Desktop base composition with an explicit loopback collector.
+
+- id: agent-loop
+  config:
+    agents:
+      - id: main
+        provider: cli-mock
+        model: cli-mock
+        cwd: !!js process.cwd()
+
+- id: session-persistence-jsonl
+  config:
+    root: './.sessions'
+    compression: none
+
+- insert:
+    - id: session-telemetry-otel
+      name: '@deepseek-ai/dsh-session-telemetry-otel'
+      config:
+        mode: !!js process.env.DSH_TELEMETRY_MODE || 'FEEDBACK_ONLY'
+        shutdownTimeoutMillis: 3000
+        exporter:
+          url: !!js process.env.DSH_TELEMETRY_OTLP_URL
+          compression: gzip
+          timeoutMillis: 1000
+        processor:
+          scheduledDelayMillis: 10000
+          maxQueueSize: 2048
+          maxExportBatchSize: 2048
+          exportTimeoutMillis: 1500
+
+    - id: logger-console
+      name: '@deepseek-ai/cordis-plugin-logger-console'
+      config:
+        colors: false
+        levels:
+          default: 3
+        showTime: ''
+
+    - id: cli-mock-llm
+      name: '../../../../test-support/loader-smoke/tests/fixtures/cli-mock-llm.ts'
+
+    # A deployment may register scrub rules on the telemetry waterfall; the
+    # shipped telemetry plugin deliberately owns none.
+    - id: telemetry-redact-rule
+      name: './telemetry-redact-rule.ts'

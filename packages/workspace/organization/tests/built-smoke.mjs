@@ -1,0 +1,92 @@
+/** Plain-Node smoke of the published organization entry; no application listener. */
+import assert from 'node:assert/strict'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { randomUUID, createHash } from 'node:crypto'
+import { Context } from '@deepseek-ai/cordis'
+import { deliveryCommandSchema } from '@deepseek-ai/dsh-organization/delivery'
+import Organization, { createOrganizationToken } from '../lib/index.js'
+
+const root = await mkdtemp(join(tmpdir(), 'organization-built-'))
+const path = join(root, 'organization.sqlite')
+let ctx = new Context()
+try {
+  await ctx.plugin(Organization, { path })
+  const request = { operationId: randomUUID(), username: 'owner', password: 'built smoke password',
+    organizationName: 'Built organization', recoveryToken: createOrganizationToken() }
+  const first = await ctx.organization.initialize(request)
+  const login = await ctx.organization.login({ username: request.username, password: request.password })
+  assert.equal(login.principal.accountId, first.accountId)
+  const project = await ctx.organization.projectCommand(login.token, { kind: 'create-project', operationId: randomUUID(),
+    organizationId: first.organizationId, name: 'Built WorkGraph', background: 'Initial background', summary: 'Project overview', goal: 'Deliver evidence' })
+  await ctx.organization.projectCommand(login.token, { kind: 'update-project', operationId: randomUUID(),
+    organizationId: first.organizationId, projectId: project.projectId, expectedVersion: project.revision,
+    name: 'Updated WorkGraph', background: 'Current background', summary: 'Project overview', goal: 'Deliver evidence' })
+  const readProject = () => ctx.organization.readProject(login.token,
+    { organizationId: first.organizationId, projectId: project.projectId }, value => {
+      assert.equal(value.name, 'Updated WorkGraph')
+      assert.equal(value.background, 'Current background')
+      assert.equal(value.summary, 'Project overview')
+      assert.equal(value.goal, 'Deliver evidence')
+    })
+  await readProject()
+  await ctx.organization.grant(login.token, { kind: 'set-grant', operationId: randomUUID(), organizationId: first.organizationId,
+    projectId: project.projectId, membershipId: first.membershipId, expectedVersion: project.revision, actions: ['read', 'write'] })
+  const taskId = randomUUID(), phaseId = randomUUID(), planId = randomUUID()
+  const query = { organizationId: first.organizationId, projectId: project.projectId, planId }
+  const definition = { taskId, phases: [{ id: phaseId, title: 'Preparation' }], tasks: [{ id: taskId, phaseId,
+    parentTaskId: null, goal: 'Built persistence', scope: 'Shared plan', acceptance: ['Reopens'], artifacts: [],
+    required: true, dependsOn: [], suggestedMembershipId: null }] }
+  const saved = await ctx.organization.savePlan(login.token, { ...query, operationId: randomUUID(), expectedRevision: 0, definition })
+  assert.equal(saved.planRevision, 1)
+  const approved = await ctx.organization.assignmentCommand(login.token, { ...query, operationId: randomUUID(),
+    kind: 'approve-assignment', taskId, planRevision: 1, assigneeId: first.membershipId })
+  const selector = { ...query, assignmentId: approved.assignmentId }
+  let inbox
+  await ctx.organization.readInbox(login.token, { organizationId: first.organizationId }, value => { inbox = value })
+  await ctx.organization.participantCommand(login.token, { ...selector, operationId: randomUUID(),
+    kind: 'answer-assignment', requestId: inbox.items[0].request.id, expectedVersion: approved.revision, answer: 'accepted' })
+  const execute = async command => ctx.organization.executionCommand(login.token, command)
+  const base = { ...selector, planRevision: 1 }
+  const grant = await execute({ ...base, kind: 'grant-execution', operationId: randomUUID(),
+    capabilities: ['model'], budget: 2, expiresAt: Date.now() + 30000, configDigest: 'a'.repeat(64) })
+  const owner = { ...base, executionDelegationId: grant.execution.executionDelegationId }
+  const run = await execute({ ...owner, kind: 'create-run', operationId: randomUUID(), configDigest: 'a'.repeat(64) })
+  const runId = run.execution.runId
+  await execute({ ...owner, runId, kind: 'transition-run', operationId: randomUUID(), state: 'cancelled' })
+  const bytes = Buffer.from('built evidence'), sha256 = createHash('sha256').update(bytes).digest('hex')
+  const uploaded = await ctx.organization.deliveryCommand(login.token, deliveryCommandSchema.parse({ ...selector, runId,
+    planRevision: 1, kind: 'publish-artifact', operationId: randomUUID(), artifactKind: 'file', path: 'evidence.txt',
+    description: 'Explicitly shared', mediaType: 'text/plain', size: bytes.length, sha256, bytes: bytes.toString('base64') }))
+  const artifactId = uploaded.delivery.artifactId
+  const submitted = await ctx.organization.deliveryCommand(login.token, { ...selector, runId, planRevision: 1,
+    kind: 'submit-delivery', operationId: randomUUID(), artifactIds: [artifactId], summary: 'Built evidence', target: 'Manual review', confirmed: true })
+  assert.ok(submitted.delivery.submissionId)
+  const reviewed = await ctx.organization.deliveryCommand(login.token, { ...selector, runId, planRevision: 1,
+    kind: 'accept-delivery', operationId: randomUUID(), submissionId: submitted.delivery.submissionId,
+    artifacts: [{ artifactId, sha256 }], confirmed: true })
+  assert.ok(reviewed.delivery.acceptanceId)
+  await ctx.fiber.dispose()
+  ctx = new Context()
+  await ctx.plugin(Organization, { path })
+  assert.deepEqual(await ctx.organization.initialize(request), first)
+  assert.equal((await ctx.organization.organizations(login.token))[0].name, request.organizationName)
+  await readProject()
+  await ctx.organization.readPlan(login.token, query, value => assert.deepEqual(value.definition, definition))
+  await ctx.organization.downloadArtifact(login.token, { ...selector, artifactId }, value => {
+    assert.equal(createHash('sha256').update(Buffer.from(value.bytes, 'base64')).digest('hex'), sha256)
+  })
+  await ctx.organization.readDelivery(login.token, selector, value => {
+    assert.equal(value.submissions[0].state, 'submitted')
+    assert.equal(value.submissions[0].reviewState, 'accepted')
+    assert.equal(value.submissions[0].acceptance.id, reviewed.delivery.acceptanceId)
+  })
+  await ctx.organization.readTasks(login.token, query, value => { assert.equal(value.items[0].status, 'completed') })
+  await ctx.organization.logout(login.token)
+  await assert.rejects(ctx.organization.authenticate(login.token), { code: 'unauthenticated' })
+  console.log('organization built smoke: initialize, login, WorkGraph, delivery, approval completion save/reopen, receipt and revocation passed')
+} finally {
+  await ctx.fiber.dispose()
+  await rm(root, { recursive: true, force: true })
+}

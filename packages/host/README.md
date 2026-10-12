@@ -1,0 +1,58 @@
+---
+description: "Package map for the web GUI host half: the HTTP and SPA servers, workspace-directory picking implementations, the open-in-app launch routes, the plugin inventory projection, and explicit product event reporting."
+kind: "package-group"
+---
+
+# host/ — web-GUI host half
+
+## Summary
+
+The `host/` group provides the Desktop GUI's authenticated HTTP server, built Client assets, and workspace-directory picking providers. The browser transport lives in [`client/`](../client/README.md); the [Desktop Host](../../apps/desktop-host/src/index.ts) boots the [`dsh-base` bundle](../bundle/base/cordis.patch.yml) and serves the internal frontend under `apps/web/`. Picker backends can replace one another behind the shared service.
+
+## Table of Contents
+
+- [Packages](#packages)
+- [Related documentation](#related-documentation)
+- [Dev Note](#dev-note)
+
+-----
+
+<a id="packages"></a>
+## Packages
+
+The packages play the host roles; each package README owns its contract and configuration.
+
+| Package | Role | ctx key |
+|---|---|---|
+| [`organization-connection/`](organization-connection/README.md) | Native account selection, pinned TLS and authorized organization views | Electron-owned library |
+| [`webserver/`](webserver/README.md) | Browser HTTP server: named routes, upgrades, index taps, and the fallback seat | `ctx.webServer` |
+| [`frontend-static/`](frontend-static/README.md) | SPA dist server on the webserver fallback seat | consumes `ctx.webServer` |
+| [`directory-picker/`](directory-picker/README.md) | Workspace-directory picking seam: capability contract and error vocabulary | `ctx.directoryPicker` |
+| [`directory-picker-native/`](directory-picker-native/README.md) | Native-OS-chooser backend for operators at the host display | registers `ctx.directoryPicker` |
+| [`directory-picker-browse/`](directory-picker-browse/README.md) | In-app directory-browser backend, including for remote clients | registers `ctx.directoryPicker` |
+| [`directory-picker-auto/`](directory-picker-auto/README.md) | Host-adaptive chooser that mounts the matching backend at boot | mounts a backend |
+| [`open-in-app/`](open-in-app/README.md) | Application probe, icon, and launch routes opening the workspace directory in an installed application | consumes `ctx.webServer` |
+| [`plugin-inventory/`](plugin-inventory/README.md) | Read-only projection of current Loader entries | Remote `pluginInventory/list` |
+| [`product-telemetry-otel/`](product-telemetry-otel/README.md) | Explicit product usage events over OTLP/HTTP | `ctx.productTelemetry` |
+
+-----
+
+<a id="related-documentation"></a>
+## Related documentation
+
+Start with the subsystem references for the transport and the workspace records, then the layering decision behind the Web client.
+
+- [HTTP server subsystem](../../docs/subsystems/web-server.md) — the webserver's routes, matching order, and config.
+- [Workspace subsystem](../../docs/subsystems/workspace.md) — the workspace records the directory picker feeds.
+- [Web config-tree boot and transport layering](../../.agents/notes/implemented/architecture/2026-07-24-web-config-tree-boot-and-transport-layering.md) — ownership of the Web transport layers.
+- [Product telemetry](../../docs/subsystems/product-telemetry.md) — explicit analytics event submission.
+
+<a id="dev-note"></a>
+## Dev Note
+
+<details>
+<summary>Working context for maintainers — click to expand</summary>
+
+None.
+
+</details>

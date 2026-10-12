@@ -1,0 +1,85 @@
+/** Origin-scoped boot, native directory selection, host paths of picked files, and update presentation with native confirmation actions. */
+
+import type { CodexSetupSnapshot, CodexSetupView } from '@deepseek-ai/dsh-agent-codex/setup-types'
+import type { OrganizationDesktopSnapshot, ConnectionResult } from '@deepseek-ai/dsh-organization-connection/types'
+import { contextBridge, ipcRenderer, webUtils } from 'electron'
+import { DESKTOP_IPC, SCHEME, type DshDesktopProductApi, type DesktopUpdatePresentation } from './ipc.ts'
+import { markDocumentPlatform, syncWindowFullscreen } from './preload-platform.ts'
+import { syncNativeTheme } from './preload-theme.ts'
+import { syncWindowsAppearance } from './preload-windows.ts'
+import { installMandatoryUpdateOverlay } from './preload-mandatory-overlay.ts'
+import { createDesktopBrowserBridge } from './preload-browser.ts'
+
+function createProductApi(): DshDesktopProductApi {
+  return {
+    protocolVersion: 2,
+    browser: createDesktopBrowserBridge(),
+    codexSetup: {
+      snapshot: () => ipcRenderer.invoke(DESKTOP_IPC.codexSetup, { kind: 'snapshot' }) as Promise<CodexSetupView>,
+      detect: () => ipcRenderer.invoke(DESKTOP_IPC.codexSetup, { kind: 'detect' }) as Promise<CodexSetupView>,
+      start: () => ipcRenderer.invoke(DESKTOP_IPC.codexSetup, { kind: 'start' }) as Promise<CodexSetupView>,
+      cancel: attemptId => ipcRenderer.invoke(DESKTOP_IPC.codexSetup, { kind: 'cancel', attemptId }) as Promise<CodexSetupView>,
+      openVerification: attemptId => ipcRenderer.invoke(DESKTOP_IPC.codexSetup, { kind: 'openVerification', attemptId }) as Promise<void>,
+      subscribe(listener) {
+        const handle = (_event: Electron.IpcRendererEvent, snapshot: CodexSetupSnapshot): void => { listener(snapshot) }
+        ipcRenderer.on(DESKTOP_IPC.codexSetupChanged, handle)
+        return () => { ipcRenderer.off(DESKTOP_IPC.codexSetupChanged, handle) }
+      },
+    },
+    organization: {
+      executionReport: request => ipcRenderer.invoke(DESKTOP_IPC.organizationExecutionReport, request),
+      execution: request => ipcRenderer.invoke(DESKTOP_IPC.organizationExecution, request),
+      conversation: request => ipcRenderer.invoke(DESKTOP_IPC.organizationConversation, request),
+      context: request => ipcRenderer.invoke(DESKTOP_IPC.organizationContext, request),
+      snapshot: () => ipcRenderer.invoke(DESKTOP_IPC.organizationSnapshot) as Promise<OrganizationDesktopSnapshot>,
+      connection: action => ipcRenderer.invoke(DESKTOP_IPC.organizationConnection, action) as Promise<ConnectionResult>,
+      server: action => ipcRenderer.invoke(DESKTOP_IPC.organizationServer, action) as Promise<{ recoveryToken?: string; path?: string }>,
+      secret: () => ipcRenderer.invoke(DESKTOP_IPC.organizationSecret) as Promise<string>,
+      subscribe(listener) {
+        const handle = (_event: Electron.IpcRendererEvent, state: OrganizationDesktopSnapshot): void => { listener(state) }
+        ipcRenderer.on(DESKTOP_IPC.organizationChanged, handle)
+        return () => { ipcRenderer.off(DESKTOP_IPC.organizationChanged, handle) }
+      },
+    },
+    updates: {
+      status: () => ipcRenderer.invoke(DESKTOP_IPC.updatesStatus) as Promise<DesktopUpdatePresentation>,
+      open: () => ipcRenderer.invoke(DESKTOP_IPC.updatesOpen) as Promise<void>,
+      subscribe(listener) {
+        const handle = (_event: Electron.IpcRendererEvent, state: DesktopUpdatePresentation): void => { listener(state) }
+        ipcRenderer.on(DESKTOP_IPC.updatesPresentation, handle)
+        return () => { ipcRenderer.off(DESKTOP_IPC.updatesPresentation, handle) }
+      },
+    },
+  }
+}
+
+if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
+  syncWindowsAppearance()
+  if (process.platform === 'win32') installMandatoryUpdateOverlay()
+  contextBridge.exposeInMainWorld('__DSH_DIRECTORY_PICKER__', {
+    pick: () => ipcRenderer.invoke(DESKTOP_IPC.directoryPick) as Promise<string | null>,
+  })
+  // The composer cites dropped, picked, and pasted files and folders that
+  // have a real path as `@path` references instead of uploading them; a
+  // File without one (pasted bytes) answers '' and uploads as before.
+  contextBridge.exposeInMainWorld('__DSH_HOST_PATHS__', {
+    pathFor: (file: File) => webUtils.getPathForFile(file),
+  })
+  contextBridge.exposeInMainWorld('dshDesktopBoot', {
+    ready: () => ipcRenderer.invoke(DESKTOP_IPC.boot) as Promise<unknown>,
+    failed: (message: string) => ipcRenderer.invoke(DESKTOP_IPC.bootFailed, message) as Promise<void>,
+  })
+}
+
+markDocumentPlatform()
+syncWindowFullscreen()
+syncNativeTheme()
+// Main-process IPC also verifies the owning window and top frame.
+contextBridge.exposeInMainWorld('dshDesktop', location.protocol === `${SCHEME}:` && location.hostname === 'app' ? createProductApi() : { protocolVersion: 2 })
+
+if (location.protocol === `${SCHEME}:` && location.hostname === 'app') {
+  contextBridge.exposeInMainWorld('__DSH_LOCALE__', {
+    read: () => ipcRenderer.invoke(DESKTOP_IPC.localeBootstrap),
+    onChange: (locale: string) => { ipcRenderer.send(DESKTOP_IPC.localeChanged, locale) },
+  })
+}

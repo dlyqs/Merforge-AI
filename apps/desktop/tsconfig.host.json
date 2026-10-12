@@ -1,0 +1,45 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../packages/boot/app-boot"
+    },
+    {
+      "path": "../../packages/util/home-paths"
+    },
+    {
+      "path": "../../packages/credentials/deepseek-account"
+    },
+    {
+      "path": "../../packages/api/gateway/tsconfig.host.json"
+    },
+    {
+      "path": "../../packages/client/ui-sidebar-browser/tsconfig.host.json"
+    },
+    {
+      "path": "../../packages/host/organization-connection"
+    },
+    {
+      "path": "../../packages/workspace/organization"
+    },
+    {
+      "path": "../../packages/api/organization-api"
+    },
+    {
+      "path": "../../packages/workspace/organization-context"
+    },
+    {
+      "path": "../../packages/workspace/organization-execution"
+    },
+    {
+      "path": "../../packages/core/agent-codex"
+    }
+  ]
+}

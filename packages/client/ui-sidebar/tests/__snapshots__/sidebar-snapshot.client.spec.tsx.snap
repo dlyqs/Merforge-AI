@@ -1,0 +1,665 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`sidebar shell snapshots > renders Windows caption controls in expanded and collapsed states > windows collapsed 1`] = `
+<div
+  data-slot="sidebar"
+  style="display: contents;"
+>
+  <div
+    class="root quietBars"
+    style="width: 72px;"
+  >
+    <aside
+      class="rail"
+    >
+      <div
+        data-slot="sidebar.account"
+        style="display: contents;"
+      />
+      <button
+        aria-label="New session"
+        class="createButton"
+        type="button"
+      >
+        <svg
+          aria-hidden="true"
+          data-content="b713fe59"
+          fill="none"
+          height="22"
+          stroke-width="1"
+          viewBox="0 0 16 16"
+          width="22"
+          xmlns="http://www.w3.org/2000/svg"
+        />
+      </button>
+      <nav
+        aria-label="Main navigation"
+        class="panelList"
+      >
+        <button
+          aria-current="page"
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="d639ec53"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Projects
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+        <button
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="d9b4e85b"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Bots
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+        <button
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="936b3903"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Recent
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+      </nav>
+      <div
+        class="footArea"
+      >
+        <div
+          data-slot="sidebar.footer.action"
+          style="display: contents;"
+        />
+        <div
+          class="settingsArea"
+        >
+          <div
+            data-slot="sidebar.settings"
+            style="display: contents;"
+          />
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+`;
+
+exports[`sidebar shell snapshots > renders Windows caption controls in expanded and collapsed states > windows expanded 1`] = `
+<div
+  data-slot="sidebar"
+  style="display: contents;"
+>
+  <div
+    class="root quietBars"
+    style="width: 300px;"
+  >
+    <aside
+      class="rail"
+    >
+      <div
+        data-slot="sidebar.account"
+        style="display: contents;"
+      />
+      <button
+        aria-label="New session"
+        class="createButton"
+        type="button"
+      >
+        <svg
+          aria-hidden="true"
+          data-content="b713fe59"
+          fill="none"
+          height="22"
+          stroke-width="1"
+          viewBox="0 0 16 16"
+          width="22"
+          xmlns="http://www.w3.org/2000/svg"
+        />
+      </button>
+      <nav
+        aria-label="Main navigation"
+        class="panelList"
+      >
+        <button
+          aria-current="page"
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="d639ec53"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Projects
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+        <button
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="d9b4e85b"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Bots
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+        <button
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="936b3903"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Recent
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+      </nav>
+      <div
+        class="footArea"
+      >
+        <div
+          data-slot="sidebar.footer.action"
+          style="display: contents;"
+        />
+        <div
+          class="settingsArea"
+        >
+          <div
+            data-slot="sidebar.settings"
+            style="display: contents;"
+          />
+        </div>
+      </div>
+    </aside>
+    <section
+      aria-label="Projects"
+      class="secondary"
+    >
+      <div
+        class="regionArea"
+      >
+        <div
+          data-slot="sidebar.personal"
+          style="display: contents;"
+        />
+      </div>
+    </section>
+  </div>
+</div>
+`;
+
+exports[`sidebar shell snapshots > renders the collapsed rail while keeping its primary entries, in place 1`] = `
+<div
+  data-slot="sidebar"
+  style="display: contents;"
+>
+  <div
+    class="root quietBars"
+    style="width: 72px;"
+  >
+    <aside
+      class="rail"
+    >
+      <div
+        data-slot="sidebar.account"
+        style="display: contents;"
+      />
+      <button
+        aria-label="New session"
+        class="createButton"
+        type="button"
+      >
+        <svg
+          aria-hidden="true"
+          data-content="b713fe59"
+          fill="none"
+          height="22"
+          stroke-width="1"
+          viewBox="0 0 16 16"
+          width="22"
+          xmlns="http://www.w3.org/2000/svg"
+        />
+      </button>
+      <nav
+        aria-label="Main navigation"
+        class="panelList"
+      >
+        <button
+          aria-current="page"
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="d639ec53"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Projects
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+        <button
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="d9b4e85b"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Bots
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+        <button
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="936b3903"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Recent
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+      </nav>
+      <div
+        class="footArea"
+      >
+        <div
+          data-slot="sidebar.footer.action"
+          style="display: contents;"
+        />
+        <div
+          class="settingsArea"
+        >
+          <div
+            data-slot="sidebar.settings"
+            style="display: contents;"
+          />
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+`;
+
+exports[`sidebar shell snapshots > renders the expanded column (mode selector, capsule, empty holes) 1`] = `
+<div
+  data-slot="sidebar"
+  style="display: contents;"
+>
+  <div
+    class="root quietBars"
+    style="width: 300px;"
+  >
+    <aside
+      class="rail"
+    >
+      <div
+        data-slot="sidebar.account"
+        style="display: contents;"
+      />
+      <button
+        aria-label="New session"
+        class="createButton"
+        type="button"
+      >
+        <svg
+          aria-hidden="true"
+          data-content="b713fe59"
+          fill="none"
+          height="22"
+          stroke-width="1"
+          viewBox="0 0 16 16"
+          width="22"
+          xmlns="http://www.w3.org/2000/svg"
+        />
+      </button>
+      <nav
+        aria-label="Main navigation"
+        class="panelList"
+      >
+        <button
+          aria-current="page"
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="d639ec53"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Projects
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+        <button
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="d9b4e85b"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Bots
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+        <button
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="936b3903"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Recent
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+      </nav>
+      <div
+        class="footArea"
+      >
+        <div
+          data-slot="sidebar.footer.action"
+          style="display: contents;"
+        />
+        <div
+          class="settingsArea"
+        >
+          <div
+            data-slot="sidebar.settings"
+            style="display: contents;"
+          />
+        </div>
+      </div>
+    </aside>
+    <section
+      aria-label="Projects"
+      class="secondary"
+    >
+      <div
+        class="regionArea"
+      >
+        <div
+          data-slot="sidebar.personal"
+          style="display: contents;"
+        />
+      </div>
+    </section>
+  </div>
+</div>
+`;
+
+exports[`sidebar shell snapshots > renders the expanded column in the default locale (zh, no setLocale) 1`] = `
+<div
+  data-slot="sidebar"
+  style="display: contents;"
+>
+  <div
+    class="root quietBars"
+    style="width: 300px;"
+  >
+    <aside
+      class="rail"
+    >
+      <div
+        data-slot="sidebar.account"
+        style="display: contents;"
+      />
+      <button
+        aria-label="新建会话"
+        class="createButton"
+        type="button"
+      >
+        <svg
+          aria-hidden="true"
+          data-content="b713fe59"
+          fill="none"
+          height="22"
+          stroke-width="1"
+          viewBox="0 0 16 16"
+          width="22"
+          xmlns="http://www.w3.org/2000/svg"
+        />
+      </button>
+      <nav
+        aria-label="主导航"
+        class="panelList"
+      >
+        <button
+          aria-current="page"
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="d639ec53"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            项目
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+        <button
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="d9b4e85b"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            Bots
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+        <button
+          class="navButton"
+          type="button"
+        >
+          <svg
+            aria-hidden="true"
+            data-content="936b3903"
+            fill="none"
+            height="21"
+            stroke-width="1"
+            viewBox="0 0 16 16"
+            width="21"
+            xmlns="http://www.w3.org/2000/svg"
+          />
+          <span>
+            最近
+          </span>
+          <div
+            data-slot="sidebar.navigation.badge"
+            style="display: contents;"
+          />
+        </button>
+      </nav>
+      <div
+        class="footArea"
+      >
+        <div
+          data-slot="sidebar.footer.action"
+          style="display: contents;"
+        />
+        <div
+          class="settingsArea"
+        >
+          <div
+            data-slot="sidebar.settings"
+            style="display: contents;"
+          />
+        </div>
+      </div>
+    </aside>
+    <section
+      aria-label="项目"
+      class="secondary"
+    >
+      <div
+        class="regionArea"
+      >
+        <div
+          data-slot="sidebar.personal"
+          style="display: contents;"
+        />
+      </div>
+    </section>
+  </div>
+</div>
+`;

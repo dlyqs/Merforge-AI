@@ -1,0 +1,145 @@
+/** Application-entrypoint classification and Desktop-launch enforcement. */
+
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { dirname, join, resolve } from 'node:path'
+import { afterEach, describe, expect, it } from 'vitest'
+import { applicationEntrypointViolations } from './verify-application-entrypoints.ts'
+
+const cleanups: string[] = []
+
+afterEach(() => {
+  for (const path of cleanups.splice(0)) rmSync(path, { recursive: true, force: true })
+})
+
+function fixture(): string {
+  const root = mkdtempSync(join(tmpdir(), 'dsh-application-entrypoints-'))
+  cleanups.push(root)
+  return root
+}
+
+function write(root: string, path: string, content: string): void {
+  const target = resolve(root, path)
+  mkdirSync(dirname(target), { recursive: true })
+  writeFileSync(target, content)
+}
+
+describe('application entrypoints', () => {
+  it('rejects a private organization entry that lost the IPC launch guard', () => {
+    const root = fixture()
+    write(root, 'apps/desktop-host/src/organization.ts', 'startNetworkServer()')
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'apps/desktop-host/src/organization.ts: private organization entry must reject launch without parent IPC',
+    ])
+  })
+
+  it('does not allow an organization server bin or root launcher', () => {
+    const root = fixture()
+    write(root, 'apps/desktop-host/package.json', JSON.stringify({ bin: { organization: 'lib/organization.js' } }))
+    write(root, 'package.json', JSON.stringify({ scripts: { 'start:organization': 'node apps/desktop-host/lib/organization.js' } }))
+    expect(applicationEntrypointViolations(root)).toHaveLength(2)
+  })
+
+  it('accepts the repository launcher inventory', () => {
+    expect(applicationEntrypointViolations(resolve(import.meta.dirname, '..'))).toEqual([])
+  })
+
+  it('rejects a package-level application bin', () => {
+    const root = fixture()
+    write(root, 'packages/example/app/package.json', JSON.stringify({ bin: { app: 'lib/bin.js' } }))
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'packages/example/app/package.json: package bin creates a non-Desktop application launcher',
+    ])
+  })
+
+  it('rejects an unclassified executable source', () => {
+    const root = fixture()
+    write(root, 'packages/example/app/src/bin.ts', '#!/usr/bin/env node\n')
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'packages/example/app/src/bin.ts: executable source has no application/build/test classification',
+    ])
+  })
+
+  it('rejects an executable at an application package root', () => {
+    const root = fixture()
+    write(root, 'apps/example/rogue.mjs', '#!/usr/bin/env node\n')
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'apps/example/rogue.mjs: executable source has no application/build/test classification',
+    ])
+  })
+
+  it('rejects an executable at the repository root', () => {
+    const root = fixture()
+    write(root, 'rogue.mjs', '#!/usr/bin/env node\n')
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'rogue.mjs: executable source has no application/build/test classification',
+    ])
+  })
+
+  it('rejects an unclassified executable in an app workspace', () => {
+    const root = fixture()
+    write(root, 'apps/rogue/src/bin.ts', '#!/usr/bin/env node\n')
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'apps/rogue/src/bin.ts: executable source has no application/build/test classification',
+    ])
+  })
+
+  it('rejects a packaging dispatcher owned by the CLI workspace', () => {
+    const root = fixture()
+    write(root, 'apps/cli/src/runtime-bootstrap.ts', '#!/usr/bin/env node\n')
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'apps/cli/src/runtime-bootstrap.ts: executable source has no application/build/test classification',
+    ])
+  })
+
+  it('rejects a private Python application carrier outside dsh', () => {
+    const root = fixture()
+    write(root, 'packages/sdk/rogue-python-runtime/package.json', JSON.stringify({ private: true }))
+    write(root, 'packages/sdk/rogue-python-runtime/src/bin.ts', '#!/usr/bin/env node\n')
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'packages/sdk/rogue-python-runtime/src/bin.ts: executable source has no application/build/test classification',
+    ])
+  })
+
+  it('rejects a standalone demo script', () => {
+    const root = fixture()
+    write(root, 'package.json', JSON.stringify({ scripts: { 'demo:ptc': 'node scripts/demo-ptc.mjs' } }))
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'package.json scripts.demo:ptc: standalone application launcher is unsupported',
+    ])
+  })
+
+  it('rejects a standalone Web script', () => {
+    const root = fixture()
+    write(root, 'package.json', JSON.stringify({ scripts: { 'start:web': 'node packages/example/app/src/bin.ts web' } }))
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'package.json scripts.start:web: standalone application launcher is unsupported',
+    ])
+  })
+
+  it('rejects a Desktop script that bypasses the Electron package', () => {
+    const root = fixture()
+    write(root, 'package.json', JSON.stringify({ scripts: { 'dev:desktop': 'tsx scripts/dev-web.ts --poll' } }))
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'package.json scripts.dev:desktop: Desktop launcher must select @deepseek-ai/dsh-desktop',
+    ])
+  })
+
+  it('rejects a new root demo until its launch role is classified', () => {
+    const root = fixture()
+    write(root, 'package.json', JSON.stringify({ scripts: { 'demo:new-app': 'node new-app.js' } }))
+
+    expect(applicationEntrypointViolations(root)).toEqual([
+      'package.json scripts.demo:new-app: standalone application launcher is unsupported',
+    ])
+  })
+})

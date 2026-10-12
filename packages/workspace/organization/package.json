@@ -1,0 +1,79 @@
+{
+  "name": "@deepseek-ai/dsh-organization",
+  "description": "Transactional organization accounts, memberships and login authority",
+  "version": "0.1.7-rc.1",
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deepseek-ai/deepseek-harness.git",
+    "directory": "packages/workspace/organization"
+  },
+  "type": "module",
+  "main": "lib/index.js",
+  "types": "lib/types/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./lib/types/index.d.ts",
+      "default": "./lib/index.js"
+    },
+    "./types": {
+      "types": "./lib/types/types.d.ts",
+      "default": "./lib/types/types.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json",
+    "./protocol": {
+      "types": "./lib/types/schema.d.ts",
+      "default": "./lib/types/schema.js"
+    },
+    "./resources": {
+      "types": "./lib/types/resource-schema.d.ts",
+      "default": "./lib/types/resource-schema.js"
+    },
+    "./maintenance": {
+      "types": "./lib/types/maintenance.d.ts",
+      "default": "./lib/types/maintenance.js"
+    },
+    "./workgraph": {
+      "types": "./lib/types/workgraph-schema.d.ts",
+      "default": "./lib/types/workgraph-schema.js"
+    },
+    "./assignment": {
+      "types": "./lib/types/assignment-protocol.d.ts",
+      "default": "./lib/types/assignment-protocol.js"
+    },
+    "./execution": {
+      "types": "./lib/types/execution-schema.d.ts",
+      "default": "./lib/types/execution-schema.js"
+    },
+    "./delivery": {
+      "types": "./lib/types/delivery-schema.d.ts",
+      "default": "./lib/types/delivery-schema.js"
+    },
+    "./planning": {
+      "types": "./lib/types/planning-schema.d.ts",
+      "default": "./lib/types/planning-schema.js"
+    }
+  },
+  "files": [
+    "lib/index.js",
+    "lib/types/**/*.js",
+    "lib/types/**/*.d.ts"
+  ],
+  "license": "MIT",
+  "peerDependencies": {
+    "@deepseek-ai/cordis": "workspace:~"
+  },
+  "dependencies": {
+    "@deepseek-ai/dsh-brand": "workspace:*",
+    "zod": "^4.4.3",
+    "@deepseek-ai/dsh-task-graph": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/cordis-plugin-include": "workspace:~"
+  }
+}

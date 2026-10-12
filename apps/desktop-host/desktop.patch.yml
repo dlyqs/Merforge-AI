@@ -1,0 +1,107 @@
+# Product-owned restrictions apply after profile and home customization.
+- id: agent-preset-registry
+  config:
+    default: standard
+- id: web-startup
+  disabled: true
+- id: webserver
+  inject: []
+  config:
+    host: 127.0.0.1
+    port: 19387
+    compression: gzip
+    compressionLevel: 1
+    compressionThresholdBytes: 1024
+- id: web-runtime
+  inject: []
+  config:
+    openBrowser: false
+    printUrl: false
+    surfaceContext: false
+    trustedHosts: []
+
+# Agent browser tools use a separate Chromium installation; the sidebar guest remains Electron-owned.
+- insert:
+    - id: browser-use
+      name: '@deepseek-ai/dsh-browser-use'
+    - id: browser-use-chrome-devtools
+      name: '@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp'
+      disabled: true
+      config:
+        mode: launch
+        headless: false
+    - id: computer-use
+      name: '@deepseek-ai/dsh-computer-use'
+    - id: computer-use-cua-driver
+      name: '@deepseek-ai/dsh-experimental-computer-use-cua-driver-native'
+      disabled: true
+
+- insert:
+    - id: organization-execution
+      name: '@deepseek-ai/dsh-organization-execution'
+      config:
+        root: !!js dshHomePath('organization-execution-sessions')
+        executionLimits:
+          maxActions: 100
+          maxSteps: 50
+          maxDurationMs: 3600000
+          maxBytes: 1048576
+          recheckMs: 1000
+        codex:
+          startupTimeoutMs: 30000
+          rpcTimeoutMs: 30000
+          turnTimeoutMs: 3600000
+          humanTimeoutMs: 300000
+          interruptTimeoutMs: 10000
+          disposeGraceMs: 3000
+          maxFrameBytes: 1048576
+          maxEarlyEvents: 1024
+          maxTurnBytes: 1048576
+          modelCacheMs: 60000
+          modelPageSize: 100
+          maxModelPages: 100
+        models:
+          - model: deepseek-flash
+            endpoint: https://api.deepseek.com/anthropic/v1
+            credential: DEEPSEEK_API_KEY
+            maxTokens: 16384
+            contextWindow: 1000000
+            idleTimeoutMs: 300000
+          - model: deepseek-v4-pro
+            endpoint: https://api.deepseek.com/anthropic/v1
+            credential: DEEPSEEK_API_KEY
+            maxTokens: 16384
+            contextWindow: 1000000
+            idleTimeoutMs: 300000
+    - id: organization-conversation
+      name: '@deepseek-ai/dsh-organization-conversation'
+      config:
+        root: !!js dshHomePath('organization-conversation-sessions')
+        maxSteps: 40
+        recheckMs: 1000
+        maxDurationMs: 1800000
+        maxReportBytes: 1048576
+        defaultSettings:
+          enabled: true
+          granularity: balanced
+        models:
+          - model: deepseek-flash
+            endpoint: https://api.deepseek.com/anthropic/v1
+            credential: DEEPSEEK_API_KEY
+            maxTokens: 16384
+            contextWindow: 1000000
+            idleTimeoutMs: 300000
+          - model: deepseek-v4-pro
+            endpoint: https://api.deepseek.com/anthropic/v1
+            credential: DEEPSEEK_API_KEY
+            maxTokens: 16384
+            contextWindow: 1000000
+            idleTimeoutMs: 300000
+    - id: organization-context
+      name: '@deepseek-ai/dsh-organization-context'
+      config:
+        root: !!js dshHomePath('organization-context-sessions')
+
+- insert:
+    - id: agent-codex
+      name: '@deepseek-ai/dsh-agent-codex'

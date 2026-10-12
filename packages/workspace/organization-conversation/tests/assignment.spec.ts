@@ -1,0 +1,273 @@
+/** Real authority/native/IPC/JSONL task conversations and durable per-item human approvals. */
+import { randomUUID } from 'node:crypto'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
+import { afterEach, expect, it, vi } from 'vitest'
+import { OrganizationConnection } from '@deepseek-ai/dsh-organization-connection'
+import * as transport from '@deepseek-ai/dsh-organization-api/transport'
+import { approveAssignmentSchema } from '@deepseek-ai/dsh-organization/assignment'
+import { addMember } from '../../organization/tests/harness.ts'
+import { workgraphHarness, password } from '../../../api/organization-api/tests/workgraph-harness.ts'
+import { organizationConversation } from '../../../../apps/desktop/src/organization-conversation.ts'
+import { conversationRequestSchema } from '../src/protocol.ts'
+import { boot, reply, selection } from './harness.ts'
+const cleanup: (() => Promise<unknown>)[] = []
+afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close() })
+async function setup() {
+  const remote = await workgraphHarness(); cleanup.push(remote.close)
+  const connect = async (name: string, username: string) => {
+    const connection = new OrganizationConnection({ trustPath: join(remote.root, name), reconnectMs: 100 })
+    cleanup.push(() => connection.close())
+    await connection.perform({ kind: 'probe', origin: remote.trust.origin })
+    await connection.perform({ kind: 'trust', fingerprint: remote.trust.fingerprint })
+    await connection.perform({ kind: 'login', username, password })
+    await connection.perform({ kind: 'select', organizationId: remote.query.organizationId })
+    return connection
+  }
+  const owner = await connect('owner', 'owner')
+  const command = approveAssignmentSchema.parse({ ...remote.query, kind: 'approve-assignment', operationId: randomUUID(),
+    taskId: remote.grant.taskId, planRevision: 1, assigneeId: remote.member.membershipId })
+  const query = { ...remote.query, planRevision: 1 }
+  return { remote, owner, connect, command, query }
+}
+it('assigns visible and previously unshared leaves and reopens without repeating approvals or notifications', async () => {
+  const h = await setup(), hidden = h.remote.save.definition.tasks[2]!
+  const request = { ...h.query, confirmed: true, commands: [h.command, { ...h.command, taskId: hidden.id, operationId: randomUUID() }] }
+  const result = await h.owner.perform({ kind: 'assignment-batch', request })
+  expect(result.assignmentBatch?.items.map(i => i.state)).toEqual(['confirmed', 'confirmed'])
+  const ids = result.assignmentBatch!.items.map(i => i.receipt!.assignmentId).sort()
+  await h.owner.close()
+  const reopened = await h.connect('owner', 'owner')
+  const read = await reopened.perform({ kind: 'assignment-batch-read', request: h.query })
+  expect(read.assignmentBatch!.items.map(i => i.receipt!.assignmentId).sort()).toEqual(ids)
+  const replay = await reopened.perform({ kind: 'assignment-batch', request })
+  expect(replay.assignmentBatch!.items.map(i => i.receipt!.assignmentId).sort()).toEqual(ids)
+  const worker = await h.connect('worker', 'reader')
+  expect(worker.snapshot().inbox!.items.map(i => i.assignment.id).sort()).toEqual(ids)
+  expect(worker.snapshot().inbox!.items.every(i => i.assignment.state === 'pending')).toBe(true)
+}, 20000)
+it('reconciles a lost batch reply after restart without sending another approval and leaves remaining items unconfirmed', async () => {
+  const h = await setup(), original = transport.organizationRequest
+  let writes = 0
+  const lost = vi.spyOn(transport, 'organizationRequest').mockImplementation(async (...args) => {
+    const response = await original(...args)
+    if (args[2] === '/organization/v1/assignment/command') { writes++; throw new Error('lost-after-commit') }
+    return response
+  })
+  const request = { ...h.query, confirmed: true, commands: [h.command,
+    { ...h.command, taskId: h.remote.save.definition.tasks[2]!.id, operationId: randomUUID() }] }
+  await h.owner.perform({ kind: 'assignment-batch', request }).catch(() => {})
+  expect(writes).toBe(1)
+  await h.owner.close(); lost.mockRestore()
+  const reopened = await h.connect('owner', 'owner')
+  const reconciled = await reopened.perform({ kind: 'assignment-batch-read', request: h.query })
+  expect(reconciled.assignmentBatch?.items.map(i => i.state)).toEqual(['confirmed', 'unconfirmed'])
+  await reopened.perform({ kind: 'reconcile' })
+  const history = await reopened.perform({ kind: 'assignment-tasks', request: { ...h.remote.query, taskId: h.command.taskId } })
+  expect(history.assignment?.result).toMatchObject({ kind: 'tasks', value: { total: 1 } })
+  expect(writes).toBe(1)
+}, 20000)
+it('opens one employee-only task conversation after offline approval, recovers local failure and reopens the same JSONL', async () => {
+  const h = await setup()
+  const employee = await addMember(h.remote.app.authority, h.remote.owner.token, h.query.organizationId, 'new-worker')
+  await h.owner.perform({ kind: 'reconnect' })
+  const approved = await h.owner.perform({ kind: 'assignment-command', request: { ...h.command, assigneeId: employee.membershipId } })
+  const leaderRoot = join(h.remote.root, 'leader-host')
+  await mkdir(leaderRoot); const leader = await boot(leaderRoot); cleanup.push(leader.close)
+  const leaderRequest = conversationRequestSchema.parse({ kind: 'open', operationId: randomUUID(),
+    organizationId: h.query.organizationId, projectId: h.query.projectId, conversationId: randomUUID() })
+  await organizationConversation(h.owner, leader.host, leaderRequest, () => {}, new AbortController().signal)
+  const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue(reply(undefined, 'LEADER_PRIVATE_THREAD'))
+  await organizationConversation(h.owner, leader.host, conversationRequestSchema.parse({ ...leaderRequest,
+    kind: 'send', operationId: randomUUID(), route: 'new_goal', text: 'Leader confidential planning', selection }),
+  () => {}, new AbortController().signal)
+  fetch.mockClear().mockResolvedValue(reply(undefined, 'Employee private analysis'))
+  const worker = await h.connect('worker', 'new-worker')
+  expect(worker.snapshot().projects?.items.map(p => p.id)).toContain(h.query.projectId)
+  const root = join(h.remote.root, 'employee-host')
+  await mkdir(root)
+  const local = await boot(root); cleanup.push(local.close)
+  const request = conversationRequestSchema.parse({ organizationId: h.query.organizationId, projectId: h.query.projectId, kind: 'open', operationId: randomUUID(),
+    conversationId: approved.receipt!.assignmentId,
+    assignment: { planId: h.remote.query.planId, assignmentId: approved.receipt!.assignmentId } })
+  const perform = (input = request) => organizationConversation(worker, local.host, input, () => {}, new AbortController().signal)
+  const domain = local.ctx.storageDomain.get('organization_conversation')!
+  const unit = Reflect.get(domain, 'unit') as import('@deepseek-ai/dsh-storage').KvUnit
+  const original = unit.setGlobal.bind(unit); let writes = 0
+  const failed = vi.spyOn(unit, 'setGlobal').mockImplementation(async (...args) => {
+    if (++writes === 2) throw new Error('local-ready-write-failed')
+    return original(...args)
+  })
+  await expect(perform()).rejects.toThrow(); failed.mockRestore()
+  const [one, two] = await Promise.all([perform(), perform(conversationRequestSchema.parse({ ...request, operationId: randomUUID() }))])
+  expect(one.result.sessionId).toBe(two.result.sessionId)
+  expect(one.result.entries).toHaveLength(1)
+  expect(one.result.entries[0]?.role).toBe('assistant')
+  expect(one.result.entries[0]?.text).toContain(h.remote.save.definition.tasks.find(t => t.id === h.remote.grant.taskId)!.goal)
+  expect(fetch).not.toHaveBeenCalled()
+  expect(two.result.history.filter(e => e.type === 'assistant/message' && e.data.message.source.provider === 'organization-assignment')).toHaveLength(1)
+  expect(two.result.history.filter(e => e.type === 'organization/assignment-context')).toHaveLength(1)
+  expect(two.result.execution?.target.taskId).toBe(h.remote.grant.taskId)
+  await expect(perform(conversationRequestSchema.parse({ ...request, kind: 'select-task', operationId: randomUUID(),
+    target: { planId: h.query.planId, taskId: h.remote.save.definition.tasks[2]!.id } }))).rejects.toThrow()
+  await expect(perform(conversationRequestSchema.parse({ ...request, operationId: randomUUID(), assignment: undefined }))).rejects.toThrow()
+  expect(one.result.assignment).toMatchObject({ id: approved.receipt!.assignmentId, state: 'pending', approvedBy: h.remote.owner.membershipId })
+  expect(one.result.goals[0]?.proposal?.definition?.tasks.map(t => t.id)).toEqual([h.remote.grant.taskId])
+  expect(JSON.stringify(one)).not.toMatch(/HIDDEN_ROOT|HIDDEN_TASK|LEADER_PRIVATE_THREAD|Leader confidential planning/)
+  await perform(conversationRequestSchema.parse({ ...request, kind: 'send', operationId: randomUUID(), route: 'query',
+    goalId: request.assignment!.assignmentId, text: 'Explain this assigned task', selection }))
+  expect(fetch).toHaveBeenCalledTimes(1)
+  expect(fetch.mock.calls[0]?.[1]?.body).not.toMatch(/HIDDEN_ROOT|HIDDEN_TASK|LEADER_PRIVATE_THREAD|Leader confidential planning/)
+  await perform(conversationRequestSchema.parse({ ...request, kind: 'rename', title: 'My assigned CSV task', operationId: randomUUID() }))
+  await local.service.verifyBindings()
+  await local.close()
+  const reopened = await boot(root); cleanup.push(reopened.close)
+  const read = await organizationConversation(worker, reopened.host, { ...request, kind: 'read' }, () => {}, new AbortController().signal)
+  expect(read.result.sessionId).toBe(one.result.sessionId)
+  expect(read.result.title).toBe('My assigned CSV task')
+  expect(read.result.entries.at(-1)?.text).toBe('Employee private analysis')
+  await expect(organizationConversation(h.owner, reopened.host, request, () => {}, new AbortController().signal)).rejects.toThrow('forbidden')
+  const prep = await worker.perform({ kind: 'assignment-preparation', request: { ...h.remote.query, assignmentId: approved.receipt!.assignmentId } })
+  expect(prep.assignment?.result).toMatchObject({ kind: 'preparation', value: { assignment: { state: 'pending' } } })
+  const logs = (await readdir(join(root, 'conversations'), { recursive: true })).filter(p => p.endsWith('.jsonl'))
+  expect(logs).toHaveLength(1)
+  expect(await readFile(join(root, 'conversations', logs[0]!), 'utf8')).toContain('Employee private analysis')
+  expect(worker.snapshot().inbox?.items).toHaveLength(1)
+  await reopened.service.verifyBindings()
+  await organizationConversation(worker, reopened.host, conversationRequestSchema.parse({ ...request, kind: 'delete', operationId: randomUUID() }),
+    () => {}, new AbortController().signal)
+  await expect(organizationConversation(worker, reopened.host, { ...request, operationId: randomUUID() as typeof request.operationId },
+    () => {}, new AbortController().signal)).rejects.toThrow()
+  expect((await readdir(join(root, 'conversations'), { recursive: true })).filter(p => p.endsWith('.jsonl'))).toHaveLength(0)
+}, 20000)
+it('denies new goals, other-task targets, stale assignment sends and revoked task reads', async () => {
+  const h = await setup(), approved = await h.owner.perform({ kind: 'assignment-command', request: h.command })
+  const worker = await h.connect('worker', 'reader'), root = join(h.remote.root, 'employee-host')
+  await mkdir(root); const local = await boot(root); cleanup.push(local.close)
+  const request = conversationRequestSchema.parse({ kind: 'open', organizationId: h.query.organizationId, projectId: h.query.projectId,
+    conversationId: approved.receipt!.assignmentId, operationId: randomUUID(),
+    assignment: { planId: h.query.planId, assignmentId: approved.receipt!.assignmentId } })
+  const perform = (input: unknown) => organizationConversation(worker, local.host, input, () => {}, new AbortController().signal)
+  await perform(request)
+  const send = { ...request, kind: 'send', operationId: randomUUID(), route: 'modify', goalId: request.assignment!.assignmentId, text: 'Refine', selection }
+  await expect(perform({ ...send, route: 'new_goal', goalId: undefined })).rejects.toThrow()
+  await expect(perform({ ...send, target: { planId: h.query.planId, taskId: h.remote.save.definition.tasks[2]!.id } })).rejects.toThrow()
+  await h.owner.perform({ kind: 'assignment-command', request: { ...h.remote.query, kind: 'revoke-assignment',
+    assignmentId: approved.receipt!.assignmentId, expectedVersion: approved.receipt!.revision, operationId: randomUUID() } })
+  await vi.waitFor(() =>{  expect(worker.snapshot().phase).toBe('ready') })
+  await expect(perform(send)).rejects.toThrow()
+  expect((await perform(request)).result.assignment?.state).toBe('revoked')
+  await h.remote.app.authority.grantTask(h.remote.owner.token, { ...h.remote.grant, actions: [], scope: 'subtree', expectedVersion: approved.receipt!.revision,
+    operationId: randomUUID() })
+  await vi.waitFor(() =>{  expect(worker.snapshot().phase).toBe('ready') })
+  await expect(perform(request)).rejects.toThrow()
+}, 20000)
+
+it('refuses employee approvals, stale revisions and simultaneous confirmation without duplicating assignments', async () => {
+  const h = await setup(), worker = await h.connect('worker', 'reader')
+  const denied = await worker.perform({ kind: 'assignment-batch', request: { ...h.query, confirmed: true, commands: [h.command] } })
+  expect(denied.assignmentBatch?.items[0]?.state).toBe('denied')
+  expect(worker.snapshot().inbox?.items).toHaveLength(0)
+  const stale = await h.owner.perform({ kind: 'assignment-batch', request: { ...h.query, planRevision: 2, confirmed: true,
+    commands: [{ ...h.command, planRevision: 2, operationId: randomUUID() }] } })
+  expect(stale.assignmentBatch?.items[0]?.state).toBe('conflict')
+  const request = { ...h.query, confirmed: true, commands: [h.command] }
+  const results = await Promise.allSettled([h.owner.perform({ kind: 'assignment-batch', request }), h.owner.perform({ kind: 'assignment-batch', request })])
+  expect(results.some(r => r.status === 'fulfilled' && r.value.assignmentBatch?.items[0]?.state === 'confirmed')).toBe(true)
+  const history = await h.owner.perform({ kind: 'assignment-tasks', request: { ...h.remote.query, taskId: h.command.taskId } })
+  expect(history.assignment?.result).toMatchObject({ kind: 'tasks', value: { total: 1 } })
+}, 20000)
+
+it('materializes one issuer review conversation from an authorized submission without running a model', async () => {
+  const h = await setup()
+  const approved = await h.owner.perform({ kind: 'assignment-command', request: h.command })
+  const assignmentId = approved.receipt!.assignmentId!
+  const worker = await h.connect('worker-review', 'reader')
+  const query = { ...h.remote.query, assignmentId }
+  const preparation = await worker.perform({ kind: 'assignment-preparation', request: query })
+  if (preparation.assignment?.result.kind !== 'preparation') throw new Error('missing preparation')
+  await worker.perform({ kind: 'assignment-participant', request: { ...query, kind: 'answer-assignment',
+    operationId: randomUUID(), requestId: preparation.assignment.result.value.request.id, expectedVersion: preparation.assignment.result.value.assignment.version, answer: 'accepted' } })
+  const summary = 'https://example.com/result · commit abc123'
+  const submitted = await worker.perform({ kind: 'delivery-command', request: { ...query, runId: null,
+    planRevision: 1, kind: 'submit-delivery', operationId: randomUUID(), artifactIds: [], summary, target: '', confirmed: true } })
+  const submissionId = submitted.receipt!.delivery!.submissionId!
+  await vi.waitFor(() => { expect(h.owner.snapshot().inbox?.items.some(item => item.request.id === submissionId)).toBe(true) })
+  const page = await h.owner.perform({ kind: 'delivery-read', request: query })
+  expect(page.delivery?.submissions[0]).toMatchObject({ id: submissionId, summary, reviewState: 'pending' })
+  const root = join(h.remote.root, 'review-host'); await mkdir(root)
+  const local = await boot(root); cleanup.push(local.close)
+  const request = conversationRequestSchema.parse({ kind: 'open-review', operationId: randomUUID(),
+    organizationId: h.query.organizationId, projectId: h.query.projectId, conversationId: submissionId,
+    review: { planId: h.query.planId, assignmentId, submissionId } })
+  if (request.kind !== 'open-review') throw new Error('review request required')
+  const perform = () => organizationConversation(h.owner, local.host, request, () => {}, new AbortController().signal)
+  const fetch = vi.spyOn(globalThis, 'fetch')
+  const one = await perform(), two = await perform()
+  expect(two.result.sessionId).toBe(one.result.sessionId)
+  expect(two.result.entries[0]?.text).toContain(summary)
+  expect(two.result.execution?.target.taskId).toBe(h.command.taskId)
+  expect(two.result.assignment).toBeUndefined()
+  expect(two.result.history.filter(event => event.type === 'assistant/message'
+    && event.data.message.source.provider === 'organization-delivery')).toHaveLength(1)
+  expect(fetch.mock.calls.some(([url]) => (typeof url === 'string' ? url : url instanceof URL ? url.href : url.url).includes('/chat/completions'))).toBe(false)
+  const invalidConversationId = randomUUID()
+  await expect(organizationConversation(h.owner, local.host, conversationRequestSchema.parse({ ...request,
+    operationId: randomUUID(), conversationId: invalidConversationId }), () => {}, new AbortController().signal))
+    .rejects.toThrow('organization-conversation-unavailable')
+  const catalog = await organizationConversation(h.owner, local.host, conversationRequestSchema.parse({
+    kind: 'catalog', operationId: randomUUID(), organizationId: h.query.organizationId,
+    projectId: h.query.projectId, conversationId: randomUUID() }), () => {}, new AbortController().signal)
+  expect(catalog.result.catalog?.conversations.find(item => item.conversationId === submissionId)?.title).toBe('Visible task')
+  expect(catalog.result.catalog?.conversations.some(item => item.conversationId === invalidConversationId)).toBe(false)
+  await expect(organizationConversation(worker, local.host, request, () => {}, new AbortController().signal)).rejects.toThrow('forbidden')
+  expect(one.result.history.filter(event => event.type === 'organization/delivery-context')).toHaveLength(1)
+  const submitAgain = async (text: string) => (await worker.perform({ kind: 'delivery-command', request: { ...query, runId: null,
+    planRevision: 1, kind: 'submit-delivery', operationId: randomUUID(), artifactIds: [], summary: text, target: '', confirmed: true } })).receipt!.delivery!.submissionId!
+  const secondId = await submitAgain('More evidence')
+  await vi.waitFor(() => { expect(h.owner.snapshot().inbox?.items.some(item => item.request.id === secondId)).toBe(true) })
+  const secondRequest = conversationRequestSchema.parse({ ...request, operationId: randomUUID(),
+    review: { ...request.review, submissionId: secondId } })
+  const continued = await organizationConversation(h.owner, local.host, secondRequest, () => {}, new AbortController().signal)
+  expect(continued.result.sessionId).toBe(one.result.sessionId)
+  expect(continued.result.history.filter(event => event.type === 'organization/delivery-context')).toHaveLength(2)
+  const repeated = await organizationConversation(h.owner, local.host, secondRequest, () => {}, new AbortController().signal)
+  expect(repeated.result.history.filter(event => event.type === 'organization/delivery-context')).toHaveLength(2)
+  const renamed = await organizationConversation(h.owner, local.host, conversationRequestSchema.parse({ kind: 'rename',
+    organizationId: h.query.organizationId, projectId: h.query.projectId, conversationId: submissionId,
+    operationId: randomUUID(), title: 'Task approval: Visible task' }), () => {}, new AbortController().signal)
+  expect(renamed.result.review?.taskId).toBe(h.command.taskId)
+  await h.owner.perform({ kind: 'delivery-command', request: { ...query, runId: null, planRevision: 1,
+    kind: 'reject-delivery', operationId: randomUUID(), submissionId: secondId, artifacts: [], confirmed: true,
+    reason: 'More detail', requirements: 'Provide a revised report' } })
+  const reapproved = await h.owner.perform({ kind: 'assignment-command', request: { ...h.command,
+    operationId: randomUUID(), planRevision: 2 } })
+  const reworkId = reapproved.receipt!.assignmentId!
+  const reworkQuery = { ...query, assignmentId: reworkId }
+  const reworkPreparation = await worker.perform({ kind: 'assignment-preparation', request: reworkQuery })
+  if (reworkPreparation.assignment?.result.kind !== 'preparation') throw new Error('missing preparation')
+  await worker.perform({ kind: 'assignment-participant', request: { ...reworkQuery, kind: 'answer-assignment',
+    operationId: randomUUID(), requestId: reworkPreparation.assignment.result.value.request.id,
+    expectedVersion: reworkPreparation.assignment.result.value.assignment.version, answer: 'accepted' } })
+  const reworkSubmission = await worker.perform({ kind: 'delivery-command', request: { ...reworkQuery, runId: null,
+    planRevision: 2, kind: 'submit-delivery', operationId: randomUUID(), artifactIds: [], summary: 'Revised report', target: '', confirmed: true } })
+  const reworkSubmissionId = reworkSubmission.receipt!.delivery!.submissionId!
+  await vi.waitFor(() => { expect(h.owner.snapshot().inbox?.items.some(item => item.request.id === reworkSubmissionId)).toBe(true) })
+  const reworkRequest = conversationRequestSchema.parse({ ...request, operationId: randomUUID(),
+    review: { ...request.review, assignmentId: reworkId, submissionId: reworkSubmissionId } })
+  const reworked = await organizationConversation(h.owner, local.host, reworkRequest, () => {}, new AbortController().signal)
+  expect(reworked.result.sessionId).toBe(one.result.sessionId)
+  expect(reworked.result.title).toBe('Task approval: Visible task')
+  expect(reworked.result.history.filter(event => event.type === 'organization/delivery-context')).toHaveLength(3)
+  await organizationConversation(h.owner, local.host, conversationRequestSchema.parse({ kind: 'delete', organizationId: h.remote.query.organizationId, projectId: h.remote.query.projectId,
+    conversationId: request.conversationId, operationId: randomUUID() }), () => {}, new AbortController().signal)
+  const thirdId = (await worker.perform({ kind: 'delivery-command', request: { ...reworkQuery, runId: null,
+    planRevision: 2, kind: 'submit-delivery', operationId: randomUUID(), artifactIds: [],
+    summary: 'After deleting the old conversation', target: '', confirmed: true } })).receipt!.delivery!.submissionId!
+  await vi.waitFor(() => { expect(h.owner.snapshot().inbox?.items.some(item => item.request.id === thirdId)).toBe(true) })
+  const newRequest = conversationRequestSchema.parse({ ...request, operationId: randomUUID(), conversationId: thirdId,
+    review: { ...request.review, assignmentId: reworkId, submissionId: thirdId } })
+  const recreated = await organizationConversation(h.owner, local.host, newRequest, () => {}, new AbortController().signal)
+  expect(recreated.result.sessionId).not.toBe(one.result.sessionId)
+  await local.service.verifyBindings()
+}, 20000)

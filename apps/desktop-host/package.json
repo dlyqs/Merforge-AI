@@ -1,0 +1,48 @@
+{
+  "name": "@deepseek-ai/dsh-desktop-host",
+  "description": "Private Node-mode host process for the Electron desktop application",
+  "version": "0.1.7-rc.1",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "main": "lib/index.js",
+  "files": [
+    "lib/index.js",
+    "desktop.patch.yml",
+    "lib/organization.js",
+    "lib/organization-boot.js",
+    "organization.yml"
+  ],
+  "dependencies": {
+    "@deepseek-ai/cordis": "workspace:~",
+    "@deepseek-ai/dsh-agent": "workspace:*",
+    "@deepseek-ai/dsh-app-boot": "workspace:*",
+    "@deepseek-ai/dsh-base": "workspace:*",
+    "@deepseek-ai/dsh-browser-use": "workspace:*",
+    "@deepseek-ai/dsh-client-connection": "workspace:*",
+    "@deepseek-ai/dsh-cmdline": "workspace:*",
+    "@deepseek-ai/dsh-computer-use": "workspace:*",
+    "@deepseek-ai/dsh-experimental-browser-use-chrome-devtools-mcp": "workspace:*",
+    "@deepseek-ai/dsh-experimental-computer-use-cua-driver-native": "workspace:*",
+    "@deepseek-ai/dsh-home-paths": "workspace:*",
+    "@deepseek-ai/dsh-host-webserver": "workspace:*",
+    "@deepseek-ai/dsh-http-proxy": "workspace:*",
+    "@deepseek-ai/dsh-jobs": "workspace:*",
+    "@deepseek-ai/dsh-launch-environment": "workspace:*",
+    "@deepseek-ai/dsh-tool-workspace-dependencies": "workspace:*",
+    "@deepseek-ai/dsh-web-app": "workspace:*",
+    "@deepseek-ai/dsh-organization": "workspace:*",
+    "@deepseek-ai/dsh-organization-api": "workspace:*",
+    "@deepseek-ai/cordis-plugin-loader": "workspace:~",
+    "@deepseek-ai/cordis-plugin-include": "workspace:~",
+    "zod": "^4.4.3",
+    "@deepseek-ai/dsh-organization-connection": "workspace:*",
+    "@deepseek-ai/dsh-organization-context": "workspace:*",
+    "@deepseek-ai/dsh-organization-execution": "workspace:*",
+    "@deepseek-ai/dsh-agent-codex": "workspace:*",
+    "@deepseek-ai/dsh-organization-conversation": "workspace:*"
+  },
+  "devDependencies": {
+    "@deepseek-ai/dsh-subprocess-local": "workspace:*"
+  }
+}

@@ -1,0 +1,401 @@
+# Merforge Desktop
+
+The desktop application is an Electron shell around the complete dsh Web application. An Electron RunAsNode child starts the shared profile runner, and Electron immediately loads the packaged Web entry at `dsh-app://app/`. Its shared loading page waits for Host boot injections, then starts the client without navigating to another document. Electron forwards application HTTP requests to the authenticated Web Host, dropping connection-level response headers (`transfer-encoding`, `connection`, `keep-alive`) that describe the Node fetch rather than the resource, and marking plugin bundle responses `no-store` because their per-launch revisions would only accumulate in Chromium's disk cache; WebSocket streams connect to that Host with credentials attached only for the owned application window. Node IPC carries boot injections, readiness, and shutdown. Desktop defaults to port `19387`, separate from Web’s `3080`; a `webserver.config.port` patch can override it.
+
+The first application-menu command, **About Merforge**, opens Electron's native About panel with the application icon, product name, and installed release version. The menu follows the Desktop shell locale. On macOS, Hide, Hide Others, Show All, and Quit use localized labels; Hide and Quit include the Merforge product name. These commands retain their native actions and shortcuts. macOS reads the icon from its application bundle, so an unpackaged development launch displays Electron's icon; Windows receives the packaged PNG.
+
+Desktop’s local native directory flow opens an Electron folder dialog attached to the application window, restoring, showing, and focusing that window first. Concurrent requests share one dialog; cancellation returns no path and failures remain retryable. Ordinary Web uses the Host chooser. Browse mode lists Host directories. On Linux without zenity or kdialog, automatic selection uses browse instead of the Electron dialog.
+
+Desktop uses bundled pnpm for profile package operations under Electron Node mode; the package launcher does not require pnpm on PATH.
+
+### Optional Agent browser and desktop operation
+
+The embedded Browser sidebar uses Electron guests. Agent browser tools are a separate opt-in Chrome DevTools MCP provider; Agent desktop tools use the opt-in native Cua Driver provider. Both provider packages ship in the Desktop Host closure, but their rows are disabled until the Desktop profile enables them. Add the following to `~/.merforge/profiles/desktop/cordis.patch.yml` (or the profile under `MERFORGE_HOME`), then restart the Host before creating or resuming a Session:
+
+```yaml
+- id: browser-use-chrome-devtools
+  disabled: false
+  config:
+    mode: launch
+    headless: false
+- id: computer-use-cua-driver
+  disabled: false
+```
+
+The browser provider needs an installed Chromium browser discoverable by Chrome DevTools MCP; set `executablePath` in that row if discovery fails. Its MCP process needs network access to the browser it launches. Browser screenshots and Cua Driver screenshots need an attachment store and an image-capable model route. The native Cua Driver SDK needs its npm optional platform binary and a graphical desktop. On macOS, grant the Merforge application the Accessibility and Screen Recording permissions required for the intended input and screenshots; on Windows, use an interactive unlocked desktop with input and capture permission. Neither provider grants OS permissions itself. Provider startup and OS actions still need manual qualification on each release platform.
+
+Press F12 (Fn+F12 on media-key keyboards), Command+Option+I on macOS, or Ctrl+Shift+I on Windows to toggle DevTools for the focused application page, including in packaged builds. These native shortcuts use hidden application-menu items. Update overlays and packaged embedded browser guests disable DevTools.
+
+## Key technical decisions
+
+The Merforge M artwork lives in `resources/icon.png` and `resources/icon.svg`; platform adaptations live in `resources/icon-windows.*` and `resources/icon-macos.*`. Export each platform SVG as a transparent 1024×1024 PNG. Electron-builder generates the multi-size ICO for the Windows application, installer, and uninstaller ([Windows icon requirements](https://learn.microsoft.com/en-us/windows/apps/design/iconography/app-icon-construction)). The installation pages use matching artwork in both themes; the uninstaller's welcome and finish pages share `installer/assets/uninstaller-sidebar.png`, converted to a 164×314 BMP during preparation. See [brand asset locations](../../BRAND_GUIDELINES.md) when replacing the temporary artwork.
+
+The macOS PNG uses an inset rounded background for legacy ICNS packaging, with representations up to 1024 pixels. It is a flattened icon, not an Icon Composer document. Apple's [app icon guidance](https://developer.apple.com/design/human-interface-guidelines/app-icons) describes unmasked layers for Icon Composer; those inputs require a separate macOS export and must not reuse the rounded ICNS artwork. Verify Finder and Dock appearance on supported macOS versions before release.
+
+### Bundled workspace dependencies
+
+Signed Windows packaging scans the primary runtime and application production dependencies for PE content, including files without a conventional extension. The final scan covers the entire unpacked application. Directory links, malformed `MZ` files and non-PE `.exe`, `.dll` or `.pyd` files stop packaging; data files beginning with `MZ` are also rejected unless they contain a valid PE header. It preserves valid vendor signatures and signs unsigned code before sealing runtime hashes or executing smoke checks. Public-key inspection uses batches of 32 files with at most four processes; hardware-token signing remains serial, and each new signature must match the configured certificate and carry a timestamp. Hardware signing and verification failures stop the run; isolated timestamp requests follow the bounded policy below. Electron-builder preserves copied runtime executables only after signature and exact-byte verification. A final PE-signature audit and a fresh-cache ASAR payload and Host smoke must pass before the release completion record is written. Development, preparation-only and unsigned builds do not use the hardware token and can be blocked by Windows code-integrity policy; no build mode disables that policy. Passing smoke checks does not establish compatibility with every enterprise policy.
+
+Desktop carries independent Python, Node.js and pnpm distributions. Python includes numpy, pandas, python-docx, python-pptx, openpyxl, Pillow, lxml and XlsxWriter with their complete dependencies. The `load_workspace_dependencies` tool installs this payload offline on first use under the Merforge home at `dsh-runtimes/dsh-primary-runtime` (normally `~/.merforge/dsh-runtimes/dsh-primary-runtime`) and returns absolute interpreter, pnpm script and library paths plus `pythonDistributions`, the bundled distribution names and versions. The version report excludes user-installed additions. Execute the pnpm script with the returned Node executable. The returned Node library directory is reserved for bundled libraries, not pnpm's global installation directory.
+
+The payload follows the Desktop release. `runtime.json` records the Desktop version, target, top-level interpreter/package-manager versions and the Python distribution map, and a digest of the selected target’s locked payload inputs and assembly format. Distribution names use PEP 503 normalization; duplicate normalized names reject the manifest. Legacy `components` manifests remain readable through normalization, with their existing library-version consistency checks. Matching installations are reused; a dependency or archive change replaces the directory after a complete staged copy even when the Desktop version stays unchanged. Older manifests without a digest are replaced on their next installation. User-added Python packages remain only while the payload identity matches. A failed directory replacement retains the previous installation; Windows may refuse replacement while an interpreter is still running.
+
+The private Desktop `runtime/bin` directory is added only to package-installation processes, not the Host PATH inherited by agent shells. This tool does not change PATH, environment variables or user package-manager configuration. pnpm retains its own defaults and user settings for global packages, executable entries and its store, including native errors when the environment does not support global installation. There is no separate dependency updater. [The primary-runtime decision](../../.agents/notes/implemented/feature/2026-09-14-desktop-primary-runtime.md) records these choices.
+
+Node prepares the bundled interpreters and Python libraries without a system Python or pip. [The download lock](../../scripts/primary-runtime/lock.json) pins interpreter archives, Python distribution versions and target-specific wheel URLs and hashes; the shared builder resolves pnpm from the root development dependency pin. The root package-manager version and the Desktop pin are checked for agreement. Wheel filenames and distribution versions must agree for every target. Preserve key order within the selected target, wheel records and distribution map, plus wheel-entry order; these affect payload identity, while top-level lock key order does not. Library wheels unpack into site-packages, retaining auxiliary files under each wheel's `.data/scripts` directory without generating command wrappers. Other installation schemes are rejected. Native-target checks verify the locked wheel set and versions, permit the interpreter's bundled pip, and check the Python version and dependency completeness without writing bytecode after staging cleanup and again after macOS signing. The standalone Node executable receives the JIT entitlement required by V8. Cross-target execution and signed installation require the target release host. Both `dev:desktop` and `start:desktop` prepare `.desktop-build/targets/<target>/runtime/primary-runtime` before launching Electron; first use may download locked dependencies. An unfinished preparation cannot report a successful launcher exit.
+
+| Decision | Why | Direct consequence |
+|---|---|---|
+| Release identity | The shell API, Web client, backend, and plugin graph are qualified as one combination; independent versions would create untested combinations and ambiguous update availability. | Electron and the private Desktop Host use the repository release version. A Host upgrade is a Desktop release, even when the shell code is unchanged. |
+| Runtime | The application must run without a system Node.js or pnpm installation. | dsh runs under Electron with `ELECTRON_RUN_AS_NODE=1` and `--expose-internals` and every package operation uses the bundled pnpm. Package-manager configuration and the Host environment follow the user's settings. Package scripts use a `node` shell launcher that forwards to Electron. |
+| Package sources | Core installation at startup adds work even when offline. | `app.asar/dsh` carries a complete production dependency tree; the profile installs only external plugins. |
+| State ownership | Sharing executable dependency graphs would let CLI and Desktop change each other's dsh, Cordis, plugin, or native-module versions, while two desktop processes could race on the same profile. | Electron acquires its process-lifetime single-instance lock before any profile access and exclusively owns `~/.merforge/profiles/desktop` plus its package-manager state. Merforge keeps product data in a separate home; legacy dsh keeps its own data and profile. |
+| Transport | Web serving and authentication share one implementation. | Electron loads packaged Web assets; the Host supplies boot injections and authenticated APIs. |
+| Plugin changes | Desktop and Web need the same installation and activation behavior. | The main application uses the shared Web Plugin Manager and bundled pnpm. |
+| Updates | Independent shell and dsh updates would recreate version splits, while unchanged shell blocks should not require a complete transfer. | The Electron shell, matching dsh runtime and pnpm form one signed update unit. Platform update artifacts may reuse unchanged blocks, but runtime version selection never splits from the Desktop release. |
+
+The [thin-wrapper decision](../../.agents/notes/implemented/architecture/2026-09-10-desktop-web-wrapper.md) owns shared Web behavior and Desktop adapters. The [Electron packaging and update decision](../../.agents/notes/implemented/architecture/2026-08-25-electron-desktop-packaging-and-updates.md) owns release identity, signing, and update qualification.
+
+## Installation ownership
+
+Electron owns `~/.merforge/profiles/desktop`. Its `dependencies` contains packages installed by pnpm; `dsh.profile.bundles` contains the built-in bundles followed by enabled plugins. The signed application supplies the private Desktop Host and its production package closure from `resources/app.asar/dsh`. Packaged applications select runtime profile resolution without creating package links; development profiles use filesystem links. Both host and plugins execute in the same Electron Node-mode process; Desktop does not enable `--preserve-symlinks`. The public CLI cannot boot or mutate this profile.
+
+The application preload exposes boot readiness, fatal startup reporting, native directory selection, the `__DSH_HOST_PATHS__` bridge for composer path references, and the lease-scoped Browser bridge only to `dsh-app://app` documents. Product documents use the shared authenticated HTTP APIs and receive the Desktop marker, update presentation, and an action that opens native confirmation; they cannot choose artifacts or authorize installation. Plugin management uses the Web application's authenticated HTTP APIs. Electron serves update-dialog documents and assets locally at `dsh-app://shell/`, independently of Host readiness. Electron exposes no plugin-management IPC or separate management document. No renderer receives filesystem access, raw Electron IPC, a shell, or arbitrary pnpm arguments.
+
+Only the main application window enables `<webview>`. Guest attachment must match a main-issued lease and partition; guests keep sandbox, context isolation and Web security without Node integration or guest preload. Browser IPC listeners are created only for the application document. [Sidebar Browser](../../packages/client/ui-sidebar-browser/README.md) describes storage grouping and guest limitations; Host authentication remains required independently of URL filtering.
+
+The `dsh-app://shell/` origin serves packaged update documents, scripts, and styles without contacting the Host. Static requests retain GET/HEAD, path-containment, and MIME handling; each update document keeps its isolated preload and owned-window IPC checks.
+
+The product UI retains Web actions, including "Open In..." through the shared authenticated HTTP routes. Desktop uses Web's automatic directory-picker selection and initializes new profiles with its own base and web-app bundle list.
+
+Electron chooses typed English or Chinese shell copy from its application locale and falls back to English. The macOS application bundle declares English and Simplified Chinese in `CFBundleLocalizations`, allowing macOS to match the initial application language to the user’s preferred languages. Saved Client UI language preferences still take precedence for the main interface. On Windows, the main document's language updates desktop menus, recovery and update prompts. The repository Client UI i18n gate checks desktop sources.
+
+Windows uses a frameless main window with red, yellow and green controls in the persistent left navigation rail. They close, minimize, and toggle maximize/restore; labels follow the document language. The three application columns extend to the window top, with a shared drag band and inline control clearance matching macOS. No native caption buttons or separate native menu row appear. Editable fields retain keyboard commands and a context menu without shortcut labels; Chromium supplies command availability, and selected read-only text offers Copy.
+
+On macOS the custom application menu also declares the standard File, Window, and application menus, because replacing Electron's default menu drops Close Window (⌘W), Minimize (⌘M), and Hide (⌘H). Linux keeps the application and Edit menus.
+
+### Runtime and plugin activation
+
+The signed `resources/app.asar/dsh/desktop-runtime.json` binds the shell version, Electron's Node version, platform, architecture, shared package versions, and final file inventory. Startup reads the metadata and checks shared package records. Release schema, shell version, target compatibility, and file integrity are verified during packaging. Core packages are never copied into profile storage or installed by pnpm at first launch.
+
+1. The main window loads the shared Web loading page offscreen from packaged static assets before profile preparation or backend startup. Shared profile initialization creates missing manifest, empty user patch, and pnpm workspace files without overwriting existing files.
+2. Before Host startup, Desktop validates the runtime descriptor and prepares the profile without modifying installed packages, declarations, or the lockfile; it removes only the `.dsh-module-fallback` projections earlier link-backend launches wrote, and startup never runs pnpm. Packages inside the profile keep native precedence, and installation package names resolve through the runtime resolution ([lookup order](../../.agents/notes/implemented/architecture/2026-09-19-profile-resolution-lookup-order.md); [cleanup removal](../../.agents/notes/implemented/simplification/2026-09-19-remove-desktop-profile-core-cleanup.md)).
+3. Changes to Electron's Node version, platform, or architecture preserve installed plugins. Native incompatibilities surface during loading and can be repaired through pnpm.
+4. Profile initialization and recovery preserve installed plugin files. Native recovery can disable third-party bundles even when the Host cannot start.
+
+Fatal main-window creation, main-document loading, preload, renderer, Web initialization, or backend failures open one native recovery dialog per application process. It shows a bounded tail of the first error, notes any truncation, and offers Exit, Restart, and Disable third-party plugins, back up profile patch, and restart. Startup failures retain the Web loading page and spinner; runtime failures retain the current page. Expected shutdowns, cancelled navigation, and ordinary requests do not trigger recovery. Host startup failures after plugin changes enter native recovery. There is no startup timeout heuristic. A listener failure containing `listen EADDRINUSE` replaces the diagnostics and reinstall advice with guidance to quit other running DSH instances, and offers only Exit and Restart.
+
+Native dialog details include at most 1,200 UTF-16 code units and eight diagnostic lines, plus the path of the crash report described below when one was written. Host error diagnostics retain only the last 64 Ki characters written to stderr. Earlier output is discarded so a long-running Host does not grow the shell’s diagnostic buffer indefinitely.
+
+Before the first fatal dialog opens, Electron writes a crash report to the platform logs directory (`app.getPath('logs')`: `logs` under the Merforge home on each platform), waiting at most one second for the write; a slow or failed write shows the dialog without a path. The file `crash-<UTC time>-<source>.log` records the source (`host` for a Host exit, `web-boot` for a renderer boot failure, `renderer` for a renderer or document failure, `main` for a shell error), whether the backend had reached ready, application and runtime versions, the error with its enumerable properties and cause chain (cut at 256 KiB), the Host’s own inspected error (at most 64 KiB) when the Host reported a startup failure over IPC before exiting, and the primary window’s recent error-level console output (at most 64 KiB). A Host exit report therefore contains the retained stderr tail, which may include plugin output. A fatal failure during shutdown writes a report without opening a dialog. Files are owner-only where the platform supports it; startup keeps the ten newest reports and removes older ones without touching other files in the directory.
+
+Recovery waits for Host shutdown before changing plugin activation. The native recovery action calls the shared app-boot recovery function under the profile transaction lock. It disables third-party bundles and renames the profile’s `cordis.patch.yml` to `cordis.patch.yml.bak-<timestamp>` (with an ordinal on collisions) without parsing it; the next startup creates an empty patch. Installed packages and earlier backups remain. The home-level patch is unchanged. The Electron console records the backup path (or its absence) and the unchanged home-level patch. Invalid profile data, rename failures, or write failures are reported as recovery-operation errors; completed changes remain, and Desktop does not restart as though recovery succeeded. Desktop has no profile-reset action or emergency HTML document.
+
+
+## Develop
+
+The development application menu offers Reload Page (Cmd+R on macOS, Ctrl+R elsewhere) and Restart App and Host. Restart waits for Host shutdown before relaunching Electron and starting a new Host; neither action rebuilds source files.
+
+`dev:desktop` builds the current Host, client bundles, Web frontend, and Electron shell, projects the built private Desktop Host package with their workspace dependencies into a disposable desktop npm project, and launches Electron without resolving dsh from npm:
+
+```sh
+pnpm run dev:desktop
+```
+
+Development Merforge state defaults to `apps/desktop/.desktop-build/development/home`, the disposable npm project lives at `apps/desktop/.desktop-build/development/project`, and Electron browser data lives at `apps/desktop/.desktop-build/development/electron-user-data`. Sessions, settings, credentials, package links, and browser data therefore stay out of the user's normal data home. An explicit `MERFORGE_HOME` replaces only the development Merforge home. Renderer DevTools opens automatically; Main, Renderer, and dsh Host debugging listen on ports 9229, 9222, and 9230. `DSH_DESKTOP_MAIN_INSPECT_PORT`, `DSH_DESKTOP_RENDERER_DEBUG_PORT`, and `DSH_DESKTOP_HOST_INSPECT_PORT` replace those ports, while `DSH_DESKTOP_OPEN_DEVTOOLS=0` keeps the detached Renderer tools closed.
+
+After `pnpm run build`, `start:desktop` reconstructs the disposable project and launches the existing artifacts without building again. The complete build bundles the Electron shell after its workspace dependencies, including the native organization response parsers:
+
+```sh
+pnpm run start:desktop
+```
+
+The Web counterparts are `pnpm run dev:web` and `pnpm run start:web`, documented in the [development guide](../../docs/development.md). Workspace development runs the private Desktop Host package under Electron RunAsNode. Installed plugins and recovery use `~/.merforge/profiles/desktop`, separate from the disposable workspace runtime. The Host uses runtime module resolution in both development and packaged builds without creating official-package fallback links; developer-installed packages, including links, retain native priority. Use an unpacked application to exercise Electron RunAsNode, bundled pnpm, bundled dsh resources, plugin installation and repair paths.
+
+
+### Startup
+
+Desktop opens the main workspace after the Host starts, regardless of whether an API key is configured. Repeated launches and `dsh://open` focus that window. API keys remain configurable from the Models settings page; the Desktop preload marker suppresses the Web credential dialog and old official welcome notice.
+
+The shell reads the shared `locale.preference` before showing the workspace. An explicit English or Chinese choice wins; otherwise Desktop picks the first supported OS language and falls back to English. The main UI reads the same preference and OS language order through its isolated preload before mounting. Language changes in Settings update the shell’s current dictionary and menu; automatic selection writes no preference.
+
+The generated project links the declared workspace dependency closure as well as pnpm’s hoisted packages, so unhoisted configured plugins remain resolvable.
+
+## Package
+
+<a id="release-versions"></a>
+
+### Release versions
+
+Before each Desktop packaging run, first confirm the complete version string with the current user. Check the selected deployment, dsh base version, retained release records, and published objects, then propose the exact version for approval. Do not start packaging until the user confirms that version; the deployment setting alone does not authorize a version choice.
+
+Record the current dsh version as the base. A production Desktop release uses that exact version, including any `alpha`, `beta`, or `rc` identifiers. A test release preserves the complete prerelease base and appends `.YYYYMMDD.index`; a stable base uses `-test.YYYYMMDD.index` instead.
+
+| dsh base | Production Desktop | Test Desktop example |
+|---|---|---|
+| `0.1.6-alpha.1` | `0.1.6-alpha.1` | `0.1.6-alpha.1.20260916.1` |
+| `0.1.6-beta.2` | `0.1.6-beta.2` | `0.1.6-beta.2.20260916.1` |
+| `0.1.6-rc.3` | `0.1.6-rc.3` | `0.1.6-rc.3.20260916.1` |
+| `0.1.6` | `0.1.6` | `0.1.6-test.20260916.1` |
+
+Use the actual creation date in Asia/Shanghai. For each base and date, start the index at 1 and increment after checking retained release records and published objects; never reuse a published version. Test distribution does not publish the corresponding unsuffixed base.
+
+Pass the confirmed version to the packaging command as `--build-version`, which reaches the artifact names, the update feed, and the upload validation as one value. The manifests keep the product version, so a test build no longer rewrites the release family and leaves nothing to revert:
+
+```sh
+pnpm --dir apps/desktop run package:win:x64 --build-version 0.1.6-alpha.1.20260916.1
+```
+
+`--build-version auto` proposes the next index for today, reading the published objects in the destination bucket and falling back to this target's local output directory when no bucket is configured or the listing cannot finish within its deadline. Confirm the proposal it prints before an upload; a run script forwards `--` on its own, and the packaging entry accepts it either way.
+
+A production release publishes the product version and takes no `--build-version`. Uploading one tags the packaged commit as `desktop-v<version>` once the artifacts are public; a build from a modified checkout is not tagged, and a tagging failure prints the command to run by hand rather than failing a completed upload. Test and local builds are deliberately left untagged, and every artifact records `dshBuildCommit` and `dshBuildDirty` in its manifest so a build handed over directly remains traceable.
+
+Version derivation does not change the fixed update channel or `nightly.yml` / `nightly-mac.yml` filenames. SemVer orders `0.1.6-alpha.1 < 0.1.6-alpha.1.20260916.1 < 0.1.6-alpha.2`, and a stable base's test version precedes that stable release. Clients only accept a greater version: replacing a feed cannot move an installed higher version to a lower corrected version. Such clients need manual installation; keep automatic downgrade disabled. The [version decision](../../.agents/notes/implemented/process/2026-09-16-desktop-release-version-derivation.md) explains why the channel does not supply the prerelease identifier.
+
+Packaging, upload, and manual macOS signature verification read `apps/desktop/.env.windows` or `.env.macos`, selected by target platform. Copy the [Windows template](.env.windows.example) or [macOS template](.env.macos.example) and fill in the local settings; Git ignores both local files, and packaged artifacts exclude them. Release fields come only from the target file, without fallback to system or shell variables; `PATH`, proxies, and build-tool settings remain inherited. The published version is an argument rather than a release field, and upload reads it from the completion record the packaging run wrote. Files use UTF-8 with optional BOM; relative certificate, SignTool, Apple API key, and keychain paths resolve from `apps/desktop`, values are not shell-expanded, and passwords containing `#` or spaces need quotes. CI also creates the target file before invoking packaging.
+
+Every package command checks the application ID, update origin, and mode-specific signing configuration before building or downloading, then probes the external tools the run will use: the archive reader, and on a Windows target the installer compiler. macOS checks the identity, Team ID, one complete notarization strategy, readable local `CSC_LINK` p12 file, explicit `CSC_KEY_PASSWORD`, and referenced API key and keychain files; Windows checks the public code-signing certificate, SignTool file, container name, and PIN format. Windows preparation-only and explicit unsigned builds do not require signing credentials. Configuration checks do not authenticate the PIN, log in to the token, unlock a keychain, or contact Apple; actual signing and notarization perform those checks. `--build-version auto` does contact the destination bucket, including under `--check`. Run the same checks separately:
+
+```sh
+pnpm --dir apps/desktop run check:package
+```
+
+`prepare:desktop` is not a prerequisite:
+
+```sh
+pnpm run package:desktop
+```
+
+Release automation uses fixed target commands so runtime preparation, dsh preparation, and electron-builder receive the same platform and architecture:
+
+```sh
+pnpm run package:desktop:mac:arm64
+pnpm run package:desktop:mac:x64
+pnpm run package:desktop:win:x64
+```
+
+The macOS arm64 command requires Apple Silicon. The macOS x64 command runs on Intel macOS or Apple Silicon with Rosetta. The Windows x64 command requires Windows x64. Linux is not a supported Desktop release target.
+
+Each target owns its packed package inputs, prepared runtime, package set, dsh tree, pnpm preparation state, unpacked application, update metadata, and final artifacts under `apps/desktop/.desktop-build/targets/<target>/`. The Electron archive cache remains shared under `.desktop-build/downloads` because every archive name includes its version, platform, and architecture and is verified before extraction. A target build never consumes another target's mutable preparation state.
+
+### Runtime file selection
+
+Desktop packs workspace packages locally and installs external dependencies through the target's bundled Node and pnpm. [Desktop's file policy](scripts/runtime-file-policy.ts) then filters the immutable `resources/app.asar/dsh/node_modules` copy before signing and integrity sealing. It omits TypeScript declarations, recognized JavaScript/CSS/TypeScript source maps, TypeScript build caches, Domino's test directory, selected native compiler outputs, and node-pty prebuilds for other platforms. It preserves runtime JavaScript, native modules and their DLL/EXE helpers, WASM, unknown assets, licenses, and notices. Dependency manifests pass through electron-builder's metadata cleanup before integrity sealing, so archiving preserves their recorded bytes. The policy does not alter npm tarballs, the bundled package manager, or user-installed plugin files.
+
+The packaged application runs compiled JavaScript and pre-generated Typert metadata; it does not compile TypeScript plugins. Source-level debugger navigation and editor declarations remain available in development packages. [Copy-policy tests](tests/runtime-file-policy.spec.ts) cover exclusions and retained assets; The [payload smoke](tests/fixtures/runtime-payload-smoke.mjs) runs under Electron RunAsNode before the Host smoke and final inventory verification. The payload smoke resolves the search tool’s ripgrep executable and verifies text search and file enumeration. Signed Windows builds run these checks after dependency signing; other builds run them during `prepare:dsh`. The [Host smoke](scripts/smoke-runtime.ts) starts the packaged Host, authenticates a frontend request, and checks an external plugin route. Every assembled application, including directory and unsigned Windows builds, repeats the payload and Host checks against ASAR. Archive integrity checks compare the complete archived descriptor with preparation, file bytes and membership in both archive and unpacked trees, recorded executable flags for archived files, and physical permissions for unpacked files.
+
+Windows release qualification also runs [directory and replacement checks](scripts/smoke-windows.ps1) manually after the Desktop build. Set `$Makensis`, `$SevenZip`, and `$PluginDir` to the pinned builder’s NSIS compiler, 7-Zip executable, and x86-unicode NSIS plugin directory; pass the prepared `window-frame.dll` as `-FrameLibrary` to exercise the native extraction path and its failure report as well. From the repository root, run the command below. It verifies directory replacement and rollback, and both locked-file replacement modes; it is not part of the unit-test lane.
+
+```powershell
+pwsh -NoProfile -File apps/desktop/scripts/smoke-windows.ps1 -Makensis $Makensis -SevenZip $SevenZip -PluginDir $PluginDir -FrameLibrary apps/desktop/.desktop-build/targets/win-x64/installer-ui/window-frame.dll
+```
+
+The Windows installer extracts the new version beside the installation directory, stops the old application, and replaces directories through same-volume renames. Same-path upgrades preserve the old directory until promotion succeeds; extraction failure leaves it intact, and promotion failure attempts to restore it. The installer removes the old backup before launch. Forced termination or power loss can leave `.new-*` or `.old-*` directories; installation-location and scope migrations retain electron-builder's old-uninstaller flow.
+
+When extraction fails, the installer writes a report with the 7-Zip result and its complete error output to the updater cache directory as `%LOCALAPPDATA%\<package-derived name>-updater\installer-logs\extract-failure-<timestamp>.log` (currently `@deepseek-aidsh-desktop-updater`) and shows the first error line with a **Copy error details** button; silent installs write only the report. Unsigned Windows builds (`DSH_DESKTOP_UNSIGNED=1`) name their installer `deepseek-harness-<version>-win-x64-unsigned.exe` so they cannot be mistaken for release artifacts.
+
+<a id="upload-updates"></a>
+
+### Upload updates
+
+Test and production uploads through `upload:*` retain a fresh `.desktop-build/upload-records/<environment>-<target>-*` directory after release preflight. `plan.json` records destination, version, every file's size/SHA-512, and published YAML bytes; flushed `events.jsonl` records PUT intent and available response status/request ID; `result.json` records completion or the last failed stage. A missing final result means interruption or unavailable storage, not success. No credential values, authorization headers, or raw SDK errors are recorded. Audit-write failures stop later PUTs. Every object is one streamed Tencent COS PUT with an explicit length and Content-MD5; the COS SDK repeats a request only when its body is not a stream, and this uploader does not retry either. Retain partial records and inspect remote state before another operation: a timeout or failed receipt write does not prove that the object was not stored. These records are local, not tamper-proof or automatically backed up; archive each release's records with its build evidence in controlled storage. Public CDN readback remains separate release qualification, explicitly marked `not-performed` in the upload result.
+
+Windows operators can keep a CLIXML object with DPAPI-encrypted `SecretId` and `SecretKey` SecureString fields outside the repository. The [credential launcher](scripts/upload-with-credentials.ps1) requires an explicit `-CredentialFile` and `-Environment production` or `test`; without `-Upload`, it only verifies decryption and injection into a local Node child, with no network request. It requires Node on `PATH` and the Windows user and machine that encrypted the file. Plaintext, empty, and whitespace-only fields fail. The parent environment is unchanged; the child receives only the selected COS pair after unrelated secrets and Node preload options are removed. Raw child stderr is suppressed and credential values in stdout are redacted. This check does not prove COS authorization. An explicit upload additionally requires `-Upload -Target <target> -Bucket <bucket>` and the normal completed-release prerequisites below; actual cloud upload remains release-operator qualification. This launcher supports permanent keys, not STS credentials. An explicit upload requires the selected deployment and bucket to match the target dotenv and completed package record before network writes; it uses the DPAPI credential pair even if the dotenv contains other COS keys.
+
+`DSH_DESKTOP_AUTO_UPDATE_ENV` selects `test` or `production` for both the URL embedded during packaging and the later COS upload; an absent value selects `test`. Test packaging requires its HTTPS origin in `DOWNLOAD_TEST_ORIGIN`; production uses `https://download.deepseek.com`. Upload requires the selected bucket in `DOWNLOAD_TEST_COS_BUCKET` or `DOWNLOAD_PROD_COS_BUCKET`. Production feeds use `dsh-desk/feeds/<target>/` and binaries use `dsh-desk/bin/<target>/`. Test releases require `DOWNLOAD_TEST_RELEASE_ID`: 32 lowercase hexadecimal characters inserted as `dsh-desk/<release-id>/feeds/<target>/` and `dsh-desk/<release-id>/bin/<target>/`. YAML references, stable-channel aliases, and blockmaps stay inside that release directory. Targets are `mac-arm64`, `mac-x64`, and `win-x64`.
+
+The update destination and upload credentials follow the selected deployment:
+
+| Environment | Public origin | COS bucket | COS credentials |
+|---|---|---|---|
+| `test` or unset | `DOWNLOAD_TEST_ORIGIN` | `DOWNLOAD_TEST_COS_BUCKET` | `DOWNLOAD_TEST_COS_SECRET_ID`, `DOWNLOAD_TEST_COS_SECRET_KEY` |
+| `production` | `https://download.deepseek.com` | `DOWNLOAD_PROD_COS_BUCKET` | `DOWNLOAD_PROD_COS_SECRET_ID`, `DOWNLOAD_PROD_COS_SECRET_KEY` |
+
+Generate a fresh ID for each test release batch with the command below and copy its output into `DOWNLOAD_TEST_RELEASE_ID` in `.env.macos` or `.env.windows`. These Git-ignored platform files own the value; shell variables do not override it, and dotenv values are not shell-expanded. Keep the ID through packaging, upload, and retries; upload rejects a completion record with a different update URL. To test an upgrade between versions, reuse the installed client’s ID for the later version. Production does not use this field.
+
+```sh
+node --input-type=module -e "import { randomBytes } from 'node:crypto'; console.log(randomBytes(16).toString('hex'))"
+```
+
+Distribute each test batch through its complete download links. Installed test clients retain their batch feed and do not discover a new ID automatically. Format validation cannot establish randomness; use the generator output. Random paths reduce guessing, not access by link holders; withdrawing a batch requires deleting its COS objects and purging its CDN directory.
+
+Configure the update origin and selected COS bucket, SecretId, and SecretKey in the target dotenv file, then package and upload the same target:
+
+```sh
+pnpm run package:desktop:mac:arm64
+pnpm run upload:mac:arm64
+```
+
+The target dotenv file for internal-test packaging explicitly sets `DSH_DESKTOP_AUTO_UPDATE_ENV=test` and `DOWNLOAD_TEST_ORIGIN=https://download-test.deepseek.com`; uploads use `DOWNLOAD_TEST_COS_BUCKET=bj-toc-download-test-1320056602` and separate test credentials. Both test and production use the fixed Nightly channel; deployment selection does not enable channel switching.
+
+Early internal-test packages use the `test` deployment. Select `production` explicitly only for a production release; changing upload credentials does not retarget an existing package. Packaging requires no COS credentials, disables electron-builder publishing, strips COS credentials from child processes, and records completion only after signing and notarization succeed. Upload validates this record, deployment, target, shared version, filenames, sizes, and SHA-512 before reading credentials. Packages and blockmaps upload before YAML; historical objects are retained. Every release publishes `nightly.yml` or `nightly-mac.yml`; stable releases also publish `latest.yml` or `latest-mac.yml` pointing at the same artifacts. Published YAML uses absolute binary URLs. The uploader leaves Cache-Control unset, including the empty header the COS SDK would otherwise add: deployment infrastructure owns cache policy, with uncached feeds and separately configurable binary caching. Serialize publication per target and verify public artifacts and feed contents before release qualification.
+
+The macOS configuration uses the required release environment instead of accepting whichever certificate appears first in a keychain. It rejects empty values, a malformed Team ID, a signing identity that includes electron-builder's unsupported `Developer ID Application:` prefix, and incomplete notarization credentials. macOS packaging requires the configured identity and its private key. Runtime preparation applies that identity, a secure timestamp, and hardened runtime to every embedded Mach-O file; after signing the application, a deep strict check rejects any other leaf authority or Team ID before artifact creation. The fixed-target macOS installer commands create separate copies of the signed application and run two artifact lanes concurrently. One lane notarizes and staples the App before generating the ZIP and its update metadata. The other encloses its signed App copy in a signed DMG, then notarizes, staples, and verifies the DMG; its inner App has no individually stapled ticket. Both lanes must finish successfully before their artifacts reach the final directory and the release completion record is written. Directory-only commands also require notarization credentials and wait for Apple notarization and App stapling. The [parallel notarization decision](../../.agents/notes/implemented/process/2026-09-09-parallel-macos-notarization.md) owns copy isolation and container ticket semantics. `CSC_LINK` must name a local p12 containing the Developer ID Application certificate and private key; URLs and Base64 inputs are not supported. `CSC_KEY_PASSWORD` is its export password, not an Apple account or login password; an explicitly empty value supports an unencrypted p12. Before building, packaging creates and unlocks a private temporary keychain, imports the p12, authorizes signing, and signs a small probe. Runtime and App signing use this keychain explicitly; existing login keychains require no setup or manual unlocking. Child processes receive its path without the p12 password. The keychain is deleted after success or ordinary failure; CI must clean temporary credentials after forced termination. CI writes the certificate and `.env.macos` from its secret store, restricts file access, and deletes both after the job. Ambient `CSC_NAME` and certificate discovery order do not select the release owner. Notary credentials may instead use electron-builder's complete Apple ID or keychain-profile strategy. The two macOS identity variables are also required when repeating the application check manually with `pnpm --dir apps/desktop run verify:mac-signature -- <path-to-app>`.
+
+macOS signing visits real files without following Framework symlink aliases. PAK resources retain all shipped languages and are sealed by the enclosing Framework or application signature instead of receiving individual signatures. The [release policy](../../.agents/notes/implemented/architecture/2026-08-25-electron-desktop-packaging-and-updates.md) owns the dependency patch and verification requirements.
+
+macOS runtime preparation caches verified single-architecture Mach-O signatures in `.desktop-build/targets/<target>/signature-cache`. Keys include input bytes and permissions, the signing probe’s actual leaf certificate, identifier, entitlement bytes, macOS version, and signing tools and policy. Git commits do not determine reuse: uncommitted byte changes invalidate the affected file. Every hit verifies cached bytes, the strict signature, certificate, identifier, entitlements, secure timestamp and hardened runtime before replacing an unchanged input. Universal binaries are signed each time. Runtime integrity and smoke checks, App signing, and Apple notarization still run. The cache requires trusted local build storage. Cache corruption or unsafe links fail the build; stop packaging before deleting the affected cache directory and retrying. Successful signing stages prune complete entries to a one-GiB payload budget; interrupted temporary entries require manual removal. Concurrent eviction can fail a reader safely. Logs report hit, miss and uncached counts.
+
+Mac package commands print `DESKTOP_PACKAGING_RECORD` with a unique directory under `apps/desktop/.desktop-build/packaging-runs/`. After reading local configuration, each run retains `run.json` (published version, product version, Git commit, dirty-worktree flag, target and Node version), `events.jsonl` (timestamped phases, durations, parallel output attribution and proxy restoration), redacted child `stdout.log` / `stderr.log`, and `result.json` (overall outcome, stage results and artifact directory). Events also record pack concurrency and whether each proxy is configured. Logs survive failures and later builds; no automatic deletion runs. Missing `result.json` means completion is unconfirmed. Known credential values are redacted; environments and notarytool authentication arguments are not recorded. Runtime preparation records package staging, installation, materialization, signing, manifests, smoke checks, descriptor verification and cleanup separately. Nested phase durations overlap and must not be added together.
+
+App and DMG notarization each record a submission ID and separate `notarytool:upload:*` and `notarytool:wait:*` durations. Upload uses `submit --no-wait` and includes authentication, local validation, transfer and server acceptance; it is not pure transfer time. Waiting starts after that command returns and includes polling and remaining Apple processing; Apple can start processing before upload submission returns. Apple status and diagnostic logs are retained, including rejection; signature checks, acceptance checks and stapling remain owned by `@electron/notarize`. Directory-only package commands use this same measured App notarization path. Individual subprocess output remains live in the terminal, while phase failures and nested errors are retained in the journal. Both platforms record parent-process packaging failures and print redacted diagnostics, including proxy recovery instructions, to the terminal. The configuration-only `check:package` command creates no run log.
+
+Mac packaging reads three tuning fields from `.env.macos`:
+
+| Setting | Default | Scope |
+|---|---|---|
+| `DSH_DESKTOP_MACOS_PACK_CONCURRENCY` | `4` | Workers for first-party and vendor workspace tarballs; requires a positive integer. |
+| `DSH_DESKTOP_MACOS_DOWNLOAD_PROXY` | Empty | HTTP/HTTPS proxy origin for Electron, runtime assets, pnpm installation and builder downloads. |
+| `DSH_DESKTOP_MACOS_NOTARIZATION_PROXY` | Empty | HTTP proxy origin for Apple tools through temporary system proxy settings. |
+
+The proxy fields are independent and reject URL credentials, paths, queries and fragments. Empty values preserve inherited networking. An explicit download proxy replaces child-process proxy variables and bypasses local hosts only; it does not change system settings. Windows and standalone `release:pack` retain their existing concurrency defaults. Company proxy addresses belong in the ignored local file; see internal documentation for addresses.
+
+Apple tooling uses the active macOS network service's HTTP/HTTPS proxies. Configured notarization routing checks proxy reachability, saves that service's settings, enables the proxy around both artifact lanes, and restores the saved settings after both lanes settle. An originally disabled proxy with an empty server and port zero is restored by disabling it; the temporary server and port may remain stored but inactive. Directory-only builds apply it to App notarization after the signed directory build. This temporarily affects other applications and requires permission to change system proxies; PAC, auto-discovery, SOCKS and authenticated proxy configurations must be disabled first. Packaging and recovery acquire the same per-user POSIX file lock before reading recovery data or changing proxies; process exit releases ownership, while the lock file remains in place. This prevents overlapping proxy transactions across checkouts; other users and network-setting tools must not change these settings concurrently. SIGINT/SIGTERM wait for active work before restoration. After forced termination or a restoration error, stop any remaining notarization processes and run `pnpm --dir apps/desktop run restore:mac-proxy`; the saved record remains until restoration succeeds. Configuration checks validate URL syntax without changing system settings or contacting the proxy.
+
+### Unsigned Windows test installer
+
+On Windows x64, use the complete unsigned packaging command for local installation testing:
+
+```sh
+pnpm run package:desktop:win:x64:unsigned
+```
+
+The command requires `DSH_DESKTOP_APP_ID` and the normal build dependencies, including Python and Visual C++ build tools for native modules. Set `PYTHON` to the Python executable when it is absent from `PATH`. It writes the installer to `.desktop-build/targets/win-x64/unsigned-artifacts/`, omits automatic-update configuration, strips signing credentials, and creates no release completion record. It does not require EV credentials or an update origin. The signed packaging and upload commands retain their release requirements.
+
+### Windows installer interface
+
+The Windows installer uses native NSIS pages with light and dark palettes, system shadows, an editable installation directory, and a finish page whose launch checkbox is selected by default. Installation is restricted to the current user. Clicking Install or pressing Enter validates the current path; new destinations must be empty, and nonempty destinations must be registered installations. Running executables at the affected installation path produce a native prompt and remain running; same-named applications in other directories do not block installation. Silent updates wait up to ten seconds for the affected application to exit, then stop with exit code 2 if it is still running.
+
+The theme follows Windows at startup; `/THEME=light`, `/THEME=dark`, and `/THEME=auto` select a palette explicitly. The window appears after its branded controls are ready. When the welcome page first appears, the installer moves above ordinary windows once and flashes its taskbar button if another window has focus; it does not remain always on top. Progress reads the pinned 7-Zip extractor’s percentage; directory promotion, registration, and cleanup retain bounded estimates. The weighted percentage does not predict remaining time. After NSIS reports success, the bar fills over 600 ms and displays 100% briefly before the finish page appears; the transition targets 750 ms. The finish page preserves the window position. Finish dismisses the installer before launching the installed executable; a launch failure restores the page for retry. Directory replacement and failure recovery follow the installation flow described above. First-launch profile preparation remains a separate Desktop operation.
+
+Windows packaging compiles an x86 Win32/GDI+ helper with Visual C++ Build Tools and a Windows SDK; signed builds sign this helper through the configured Windows signer. The preparation hook leaves production dependency collection to electron-builder on every platform. The [installer decision](../../.agents/notes/implemented/architecture/2026-09-10-windows-native-installer-pages.md) records the NSIS integration and release checks.
+
+Run `pnpm --dir apps/desktop run test:installer` from the repository root on an interactive Windows x64 desktop to build and exercise a small native test payload through the production installer configuration. Each run uses a unique product identity and sequentially exercises English-only and Chinese-only installer variants, selecting test labels from the displayed welcome button. Both variants install into private directories and uninstall after testing; screenshots and results remain under `.desktop-build/installer-tests/`. The checks include upgrades to registered paths with trailing separators and rejection of drive roots. The optional `--signed` flag uses the Windows EV configuration below to sign test executables and the helper before embedding them; it does not enable an update feed.
+
+The Windows uninstaller removes the Electron user-data directory (browser storage and caches under `%APPDATA%`, nested under the package scope), the `%APPDATA%` product directory, and the updater download cache under `%LOCALAPPDATA%` together with the application, then removes ordinary empty scope directories below `%APPDATA%`. The Harness home (`~/.dsh` or `DSH_HOME`: sessions, settings, credentials, plugins) is never touched, and a `DSH_HOME` published as a Windows environment variable additionally protects any target overlapping it. Silent uninstalls remove the same data; an uninstaller started with `--updated` or `/KEEP_APP_DATA`, as electron-builder does for in-place updates and for replacing an older installation from another directory, retains it. Removal runs through the native helper, which refuses protected Windows folders and paths overlapping the installation or the home, requires a fixed local drive, leaves a linked root or ancestor in place, unlinks reparse points without entering their targets, clears read-only attributes, and keeps deleting siblings after a locked file; residue never stops uninstallation and is not reported. Installation records `InstallLocation` on the Windows uninstall entry as standard inventory metadata; on Windows 11, Uninstall in the Start menu context menu opens the installed-apps list for every Win32 application, and only MSIX packages uninstall directly from there. The uninstaller declares DPI awareness and uses Microsoft YaHei UI for Chinese. This behavior is Windows-only.
+
+Use `node apps/desktop/scripts/test-windows-installer.mjs --uninstall-only --compile-only` to compile isolated English and Chinese fixtures with a per-run scoped package name. Omit `--compile-only` to run the native remover regression and the interactive, silent, `--updated`, `/KEEP_APP_DATA` and `DSH_HOME`-inside-Electron-data checks against seeded data. Compilation does not establish installed-uninstall behavior.
+
+### Windows EV signing
+
+Runtime signing shares complete signed files across the current Windows account's worktrees. `DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_DIR` in `.env.windows` selects an absolute fixed-drive directory; the default is `%USERPROFILE%\.dsh-desktop-signing\signature-cache\v1`. Cache directories must belong to the current account and exclude other ordinary accounts from their access permissions; linked paths are rejected. Entries identify the original bytes, public certificate and signing toolchain. Every restoration checks the digest, Windows trust, timestamp and certificate before replacing the unsigned file; invalid entries stop packaging without hardware fallback. Cache age alone does not trigger signing. The cache trusts programs running as the same account and does not defend against administrators. The [runtime signature cache decision](../../.agents/notes/implemented/process/2026-09-17-windows-runtime-signature-cache.md) owns qualification and design limits.
+
+Preflight, primary-runtime signing, application-runtime signing and artifact creation each hold the account's signing-stage lock until their supervised child processes settle. Other builds wait before entering those stages; compilation and preparation do not hold the lock. Runtime signing workers own their locks, so terminating only the outer packaging process does not unlock a surviving cache user. Migration and maintenance acquire the same lock; older or external signing commands do not participate and must be scheduled separately. Stage waiting is outside the preflight deadline. Closing the stage handle releases ordinary contention without removing the separate hardware-attempt interlock; a retained hardware failure still requires operator recovery.
+
+Cache-hit copying, hashing and per-file trust checks run with `DSH_DESKTOP_WINDOWS_SIGNATURE_CACHE_CONCURRENCY` workers from `.env.windows` (default `4`, integer `1`–`8`). All restores and their post-verification finish before cache misses enter serial hardware signing. A restore or verification failure stops new dispatch and drains active work before releasing the stage lock; hardware signing, runtime smoke checks and final integrity validation remain required.
+
+Each runtime stage writes `SIGNATURE_CACHE_SUMMARY` to stdout and its packaging journal, including the actual directory, policy identity, hit/miss counts, newly published and retained entries, signing requests, avoided signing requests and validation failures. Timings distinguish signing, trust verification of restored and newly signed files, and restoration; restoration includes its trust check and staging cleanup. These counters exclude preflight, final artifact signing and the outer runtime signature checks. Stage lock events record waiting separately. Concurrent timings sum per-file work rather than stage wall time.
+
+Use `pnpm --dir apps/desktop run cache:windows-signatures --usage` to inspect structurally complete-entry bytes and counts, or `--from <absolute-old-cache>` to import an explicitly selected cache owned by the same account. Migration leaves the source unchanged, skips staging names, rejects corrupt entries and retains valid existing entries even when their timestamp bytes differ. `--clear` explicitly removes complete entries under the stage lock; no automatic capacity eviction runs. `--directory <absolute-cache>` selects a maintenance destination without loading release credentials. Incomplete staging entries remain untouched and are counted separately; inspect them only after all builds have stopped. These commands never clear hardware failure evidence. Default storage is outside AppData so MSIX launcher virtualization does not split the account's cache; redirected overrides fail explicitly.
+
+Signed Windows builds run a supervised signing preflight before compilation or dependency preparation. Static configuration, certificate validity, audit storage, compiler availability and any retained signing interlock are checked without token access. The local .NET Framework C# compiler creates a small private probe; the production signer signs it once, and verification requires the configured certificate and a timestamp before building continues. The probe is never executed. The overall 60-second preflight deadline includes timestamp attempts; deadline expiry, hardware signing errors and verification failures stop the run without another hardware attempt. Success proves the current signing path works, not that the PIN was independently authenticated: SafeNet may reuse login state. Do not log out or repeat authentication to test the PIN. `--check`, preparation-only and `--unsigned` modes do not run this hardware preflight; unsigned artifacts remain ineligible for release upload. Automated regression tests use a fake signer; release operators qualify real hardware separately.
+
+Windows NSIS uploads require the generated, nonempty `.exe.blockmap` beside the installer. The blockmap is uploaded before channel YAML; NSIS installer metadata does not require the embedded `blockMapSize` used by the separate web-installer format. File-plan tests use the pinned builder's blockmap generator, not a hand-authored embedded-map field.
+
+Signed Windows configuration derives the updater's `publisherName` from the same public certificate's `CN`, `O`, and `C` attributes. Each must be present, nonempty, and single-valued. These identity attributes allow certificate renewal without pinning a leaf thumbprint. The installed application's `app-update.yml` carries the expected publisher; the downloaded feed does not choose it. Unsigned test builds omit updater configuration. See the [signature qualification record](tests/README.md) for real-file verification and its limits.
+
+For this project's SafeNet token, `SignTool Error: No private key is available.` indicates an incorrect PIN. Stop all signing attempts immediately and wait for the user to correct the PIN before continuing. Five incorrect PIN attempts lock the token. Do not retry packaging or signing probes after this error. The signer serializes token operations and rejects all queued tasks after the first failure.
+
+Windows package commands print `DESKTOP_PACKAGING_RECORD` with a unique directory under `.desktop-build/packaging-runs/`. Each run retains `run.json`, timestamped `events.jsonl`, redacted `stdout.log` and `stderr.log`, and `result.json`. A signing failure also writes `fatal.json` and notifies the parent through stderr; the supervisor immediately requests termination of its stage process tree and waits for exit. Failed stages cannot start subsequent stages or create a release completion record. Journal failures also stop the run. Termination errors remain failures and require operator inspection; a missing final record means completion was not established.
+
+Hardware signing requires a supervised run. Before invoking the command interpreter, the signer atomically acquires `%USERPROFILE%/.dsh-desktop-signing/attempt.json` and records the attempt. Only successful signing followed by verification of the configured primary signature releases that file; timestamps are completed afterward without hardware access. Failure, interruption, an existing interlock, or unavailable audit storage prevents further hardware access, including from another signer instance, process, or checkout under the same Windows account. There is no timed recovery or automatic retry. An administrator must inspect the retained evidence and token state before explicitly authorizing interlock recovery; logging into the token or replacing a PIN file does not clear it. The records distinguish signing intent, command-interpreter PID, and completion; they do not measure internal CSP/token authentication attempts. Command arguments, PINs, and credential environments are not recorded. Independent Windows accounts and unrelated signing programs are outside this interlock.
+
+Windows packaging fixes the 7-Zip filter to `BCJ` for compatibility with the bundled NSIS decoder. This preserves ARM64 binaries carried by dependencies in x64 installers; automatic ARM64 filtering produces entries that this decoder cannot extract.
+
+NSIS removes its temporary extraction tree during installation, before the completion page or an automatic launch. The installed production packages remain ordinary files; startup does not extract them again. Installation still writes the complete application tree.
+
+Fill in `.env.windows` with `DSH_DESKTOP_WINDOWS_CER_FILE` (public EV leaf certificate), `DSH_DESKTOP_WINDOWS_SIGNTOOL` (SafeNet-compatible SignTool), `DSH_DESKTOP_WINDOWS_KEY_CONTAINER` (matching private-key container), and `DSH_DESKTOP_WINDOWS_TOKEN_PIN` (Token Password). The private key stays on the USB token; keep the certificate and local credential file out of Git.
+
+```sh
+pnpm run package:desktop:win:x64
+```
+
+Insert and unlock the token before packaging. The electron-builder hook passes each artifact to the CRLF `scripts/windows-sign.cmd`, which invokes the configured SignTool once with `/f`, SafeNet `/kc "[{{PIN}}]=container"`, `/csp "eToken Base Cryptographic Provider"`, a SHA-256 file digest, without a timestamp. The hook then completes a DigiCert SHA-256 RFC 3161 timestamp on isolated copies without signing credentials. The hook never substitutes electron-builder's bundled SignTool and never retries a failed signing request. Windows release packaging fails instead of emitting unsigned artifacts when the SignTool, certificate, container, PIN, token, or signature is unavailable.
+
+Timestamp completion retries only a normally exited timestamp command returning failure or warning, at most three times with one- and two-second delays. Each attempt starts from the same verified primary signature. Launch errors, uncertain termination and verification failures stop immediately. SignTool operates on short private paths; publication copies verified bytes to the target volume before atomic replacement. Final Windows trust, certificate, timestamp and normalized full-file equality are required. Exhaustion stops packaging and preserves evidence without another hardware call. See the [signature completion decision](../../.agents/notes/implemented/process/2026-09-17-windows-signature-completion.md).
+
+The PIN cannot contain `]`, a quote, or a line break because those characters delimit the SafeNet `/kc` value or its CMD argument. The CMD disables delayed expansion so a PIN containing `!` reaches SafeNet unchanged. Packaging withholds every `DSH_DESKTOP_WINDOWS_*` field from build and runtime-preparation subprocesses, gives signing preflight, the dedicated runtime signing stages and electron-builder only the four configured inputs, gives the signing CMD only the validated signing fields in an otherwise scrubbed environment, clears those fields before SignTool starts, and redacts SignTool diagnostics. SafeNet still requires the PIN in the SignTool process command line. The local `.env.windows` stores the PIN in plaintext and needs restricted file access; CI uses a temporary file and deletes it after the job. Do not commit or share its contents or print credentials in logs. Configuration checks consume no token PIN attempts; signing still stops the batch on its first failure.
+
+Create a runnable application directory instead of an installer by using the matching `:dir` command, such as:
+
+```sh
+pnpm run package:desktop:dir
+pnpm run package:desktop:mac:arm64:dir
+```
+
+To inspect or troubleshoot the prepared host-target resources without invoking electron-builder, stop the same pipeline after preparation:
+
+```sh
+pnpm run prepare:desktop
+```
+
+This diagnostic command is an alternative stopping point, not the first half of a two-command build. A later `package:desktop*` command repeats the official build and preparation so it cannot consume stale dsh packages, runtime files, or dsh content.
+
+Every package command builds the repository, packs the first-party production closure rooted at the private Desktop Host, and prepares the target Electron distribution and pnpm CLI. `prepare:dsh` installs the production graph once at build time, prepares materialized packages for electron-builder to archive under `app.asar/dsh`, removes package-manager metadata, and writes `desktop-runtime.json` with shared package versions and final file hashes. On macOS it signs and verifies native files before inventory generation; electron-builder excludes this already-signed tree from nested re-signing. Resource mappings explicitly include `dsh/node_modules`, which the default root-directory filter omits; the prepared runtime inventory is checked after native signing. Native executables and libraries are unpacked beside ASAR; Python, standalone Node and pnpm remain in external runtime resources. Windows packaging checks every prepared PE against its ASAR unpacked entry and byte-identical disk copy, including unsigned builds. Builder glob rules match braces in PE filenames as single-character wildcards, so a matching neighboring file may also be unpacked. Prepared runtime smoke uses the verified target descriptor rather than the build host architecture. Signed installer, notarization, installed upgrade, and target-specific native-module qualification require the release environment.
+
+macOS packaging writes `Contents/Resources/app-update.yml` while assembling the App and before code signing, including the directory build that feeds the parallel ZIP and DMG lanes. The signing hook verifies the exact feed and updater cache directory. Both lane copies and the promoted App are checked again before the release completion record is written; a missing or mismatched configuration prevents artifact promotion and therefore prevents upload.
+
+An unpacked artifact contains Electron, the materialized dsh production tree, pnpm, and the shell application. Installer size and filesystem size differ; release qualification measures both, plus the profile’s plugin storage and first-launch latency. The runtime trades more application files for eliminating core package installation on the user’s machine.
+
+## Updates
+
+Packaged Merforge builds contain no update feed or mandatory-policy origin, and ordinary network update checks are disabled until an owned source is configured. The generic updater, signature verification, installation integrity, and Host recovery paths remain available for local qualification. The Check for Updates action reports the disabled state rather than contacting the former official service.
+
+### Local updater qualification
+
+Ordinary update HTTP requests have a per-connection inactivity deadline: no response headers or no further response bytes for `60000` ms fails the operation. `DSH_DESKTOP_UPDATE_HTTP_IDLE_TIMEOUT_MS` accepts an integer from `1000` through `2147483647` to adjust it; active downloads have no total-duration deadline. Failed downloads retain the retry indicator and require another user action.
+
+On Windows with workspace dependencies installed, run this command from the repository root:
+
+```sh
+node apps/desktop/node_modules/pnpm/bin/pnpm.mjs --dir apps/desktop run test:updates:local
+```
+
+The command builds the Desktop shell and runs its coordinator with real Electron HTTP requests and `NsisUpdater` against a private loopback server. It checks user-authorized full downloads, SHA-512 rejection, explicit retry, concurrent request coalescing, feed replacement, and installation handoff. It also opens the real mandatory-update renderer with its sandboxed preload and checks button actions, close/Esc prevention, text-only content, a stalled policy request, and policy clearance. Success prints `LOCAL_UPDATER_RESULT` and exits with code zero; functional failure exits nonzero. Each invocation owns a random port and temporary user-data/cache directory, closes the listener, waits for Electron exit, and removes its temporary files. Reports and available screenshots remain in a unique `.desktop-build/qualification/local-updater-*` directory. Screenshot failure is recorded separately, never reported as visual acceptance. No COS or signing credentials are required.
+
+The downloaded bytes are inert, and the installation call is recorded rather than executed. The test substitutes browser opening and clipboard writing to avoid external navigation and clipboard changes. It does not boot the full product workspace, qualify a real installer or restart, verify publisher signatures, or exercise differential updates or macOS. Stalled policy requests, feed requests, and payload transfers exercise real deadlines and recovery. The actual ordinary dialog verifies isolated preload loading, card geometry, background blur, cancellation, task-warning choices, and explicit installation approval; The [local qualification decision](../../.agents/notes/implemented/testing/2026-09-10-desktop-local-updater-qualification.md) and [verification record](tests/README.md) preserve these limits; production release requirements remain unchanged.
+
+## Low-level development overrides
+
+An unpackaged Electron process uses `.desktop-build/development/project` under its application directory as its development project. `DSH_DESKTOP_PNPM_ENTRY` and `DSH_DESKTOP_DSH_DIR` are optional overrides with application-path defaults. `DSH_DESKTOP_PRIMARY_RUNTIME_DIR` is required for every unpackaged launch: the development launchers (`dev:desktop`, `start:desktop`, and the workspace-update qualification runner) set it to the primary-runtime directory of the target they prepared, and a launch without it fails with the fatal startup dialog. The launcher must set it because the shell cannot derive that directory from `process.arch`: the build target fixes Windows to x64 while the host may be arm64. Packaged applications ignore these variables, resolve signed resources from `process.resourcesPath`, and use the managed Desktop profile.
+
+## Known limitations
+
+- Windows material rendering still requires platform QA.
+
+- Release signing, notarization, update hosting, and previous-version installed-artifact qualification require the production release environment.
+- Dependency lifecycle scripts follow pnpm’s build permissions; Desktop provides no separate approval dialog.
+- Merforge keeps sessions, settings, credentials, workspaces, and storage under its separate data directory. Legacy dsh data remains untouched.
+- Unpackaged startup on an Electron win32-arm64 host now succeeds, but the payload remains x64: the architecture check in `packages/skill/tool-workspace-dependencies/src/index.ts` compares the recorded payload architecture against the host `process.arch`, so the `load_workspace_dependencies` tool can still reject the primary runtime.
+
+
+
+
+
+
+## Dev Note
+
+Pre-launch CDN and capacity decisions are tracked in the [Desktop update proposal](../../.agents/notes/proposed/feature/2026-09-08-desktop-update-policy-and-installation.md#cdn-and-capacity-qualification).
+
+## Private organization service
+
+`DesktopOrganizationProcess` is independent of the personal Host and defaults to disabled. Both owned service processes suppress Windows console windows at spawn; their private IPC and Desktop-owned shutdown remain active. The owned product top frame consumes a typed organization preload bridge for setup, certificate comparison, accounts, project grants and stopped-service backup/restore. The native manager saves the opt-in startup restore setting, approved public certificate and secret-free uncertain-operation IDs separately from personal profiles. Login tokens stay in memory. Only explicit start boots `dsh-desktop-host/lib/organization.js` with a scrubbed environment. No standalone launcher or bin is provided. `organization.yml` loads only the dedicated SQLite authority and HTTPS API. Full app exit and update installation await organization shutdown; parent IPC loss also drains the child. Public status exposes certificate fingerprint/expiry, never the key. See the [organization design](../../docs/organization-foundation.md).
+
+
+## Organization execution acceptance
+
+The [execution acceptance guide](../../docs/organization-execution-acceptance.md) lists the complete Desktop build, private-process Node/Electron Node mode smokes, opt-in live-model test and A/B/C delivery scenario. The execution smoke uses the published private organization service and employee Host IPC without creating windows. Deterministic source regressions and user-run release/product acceptance are recorded separately; a passed source test does not certify an installation or three-machine workflow.
+
+The [Codex acceptance guide](../../docs/codex-backend-acceptance.md) adds personal native conversation and two-employee organization delivery. `codex-packed-smoke.mjs` checks actual npm tarball exports under Node and Electron Node mode, reusing installed dependencies without installing a runtime. These offline tests replace only the native peer; actual payload startup, login, signed installation and macOS/Windows qualification remain user checks. Codex owns native execution; Merforge owns dispatch, received output and human delivery actions.
+
+## Codex setup transport
+
+Preload product API v2 adds fixed `codexSetup` snapshot/detect/start/cancel/openVerification/subscribe operations. The private setup channel is independently versioned at v1 and binds replies to the Host startup nonce. Electron checks the owned `dsh-app://app` top frame, validates fixed request fields, supplies branded window lifetimes and rechecks the Host/document after awaits. Navigation or window destruction retires the owner and asks the Host to cancel and drain. Host loss publishes unavailable state and retires grants; replacement Hosts do not replay login/start. Renderer cannot supply URLs, native login IDs, logout or generic RPC. The Host validates the official verification endpoint; only an explicit openVerification action calls the external browser.
+
+These are transport capabilities for the Codex settings plan. The settings card and first-use guide remain Phase 4–5 work. Real device login, visible window behavior and platform persistence require user acceptance; engineering tests use isolated external peers without a window.
+
+Windows has no Application or Edit caption-menu buttons or popup IPC handler. Custom traffic-light labels remain synchronized with the document language. Update controls remain in Settings. The macOS native traffic-light group starts 6px from the left edge, leaving clearance before the 72px primary rail divider.
+
+## Local Codex CLI
+
+Desktop does not bundle Codex. Users install and update their own CLI. Settings → Models → Codex probes the executable, authentication and models on each explicit detection and displays its actual version. Both persistent conversations and one-shot delegation launch the same local resolver. Missing CLI errors require local installation; reinstalling Merforge does not provide Codex. GUI launches also search conventional Homebrew and user local/npm/Cargo directories when the inherited PATH is minimal. The [Codex backend](../../docs/codex-backend.md) describes lookup, version records and protocol checks.

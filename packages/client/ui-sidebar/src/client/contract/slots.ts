@@ -1,0 +1,149 @@
+/** Primary navigation, secondary browser and footer slot declarations. */
+import type { InjectFace, PropsLocale, PropsRenderSlots, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
+import type { ObservableSnapshot } from '@deepseek-ai/dsh-client-store'
+import type { MainPanelId } from '@deepseek-ai/dsh-client-ui-layout/client'
+
+declare module '@deepseek-ai/dsh-client-ui-slots' {
+  interface SlotMap {
+    /** Account avatar and account dialog at the primary rail top. */
+    'sidebar.account': { kind: 'single'; scope: 'root'; owner: Record<never, never> }
+    /** Recipient unread indicator on a primary navigation destination. */
+    'sidebar.navigation.badge': { kind: 'single'; scope: 'root'; owner: { section: 'tasks' | 'projects' | 'bots' | 'recent' } }
+    /** Non-interactive notification inside the workspace navigation button. */
+    'shell.navigation.badge': { kind: 'single'; scope: 'root'; owner: Record<never, never> }
+    /**
+     * Reserved brand-mark registration; the navigation header no longer renders branding.
+     */
+    'sidebar.brand.mark': { kind: 'single'; scope: 'root'; owner: SidebarBrandMarkOwnerProps }
+    /**
+     * Reserved brand-name registration; the navigation header no longer renders branding.
+     */
+    'sidebar.brand.name': { kind: 'single'; scope: 'root'; owner: SidebarBrandNameOwnerProps }
+    /**
+     * Global panel icons. Each list id addresses the matching main panel;
+     * the sidebar owns the button and resolves its label from list metadata.
+     */
+    'sidebar.panellist': { kind: 'list'; scope: 'root'; owner: SidebarPanelIconOwnerProps }
+    /**
+     * The workspace/session browsing region: section header, search, the
+     * grouped/flat session list, and every workspace dialog. Declared by this
+     * package's 'sidebar' entry (declaring is claiming); ui-workspace
+     * registers the browser.
+     */
+    'sidebar.workspaces': { kind: 'single'; scope: 'root'; owner: SidebarSectionOwnerProps }
+    /** Project and Bot navigation in the sidebar browsing region. */
+    'sidebar.personal': { kind: 'single'; scope: 'root'; owner: SidebarSectionOwnerProps }
+    /** Task plan list paired with the task main panel. */
+    'sidebar.tasks': { kind: 'single'; scope: 'root'; owner: Record<never, never> }
+    /**
+     * The settings seat at the sidebar foot. Declared by this package's
+     * 'sidebar' entry; ui-settings registers its trigger row + modal panel.
+     * The sidebar passes only its column state — it holds no settings state.
+     */
+    'sidebar.settings': { kind: 'single'; scope: 'root'; owner: SidebarSettingsOwnerProps }
+    /**
+     * Optional actions beside Settings at the sidebar foot. Declared by this
+     * package's 'sidebar' entry; each action receives only the column state.
+     */
+    'sidebar.footer.action': { kind: 'list'; scope: 'root'; owner: SidebarFooterActionOwnerProps }
+  }
+}
+
+/** Geometry supplied to the sidebar brand-mark occupant. */
+export interface SidebarBrandMarkOwnerProps {
+  /** Requested square edge in pixels. */
+  size: number
+}
+
+/** Empty owner share for the sidebar brand-name occupant. */
+export interface SidebarBrandNameOwnerProps {
+  /** Marker field: the occupant owns its own content and width. */
+  children?: never
+}
+
+/** Icon presentation supplied by the global panel row. */
+export interface SidebarPanelIconOwnerProps {
+  /** Requested square edge in pixels. */
+  size: number
+  /** Whether this panel is selected in the main column. */
+  active: boolean
+}
+
+/** Serializable metadata for one active global panel list registration. */
+export interface SidebarPanelMetadata {
+  /** List id and matching main panel key. */
+  id: MainPanelId
+  /** Ascending row order; ties retain registration order. */
+  order: number
+  /** Row title and accessible name: resolved label, or the id when omitted. */
+  label: string
+}
+
+/**
+ * Owner share of the browser hole — the only facts crossing the shell/region
+ * boundary. Business data and actions arrive through the region's own inject.
+ */
+export interface SidebarSectionOwnerProps {
+  /** Shell fold-state output: wide renders the full browser, rail the icon column. */
+  wide: boolean
+  /** Selected secondary browser; absent in independent management occurrences. */
+  section?: 'projects' | 'bots' | 'recent'
+  /** A primary navigation click requests the first conversation, including repeated clicks. */
+  navigationRevision?: number
+  /** Acknowledge the selection after the browser catalog is ready. */
+  onNavigationHandled?: () => void
+  /** Rail icons request expansion; the browser rides the wide flip for focus. */
+  expandSidebar: () => void
+}
+
+/**
+ * Owner share of the sidebar settings seat: the column display state the
+ * occupant's trigger row must render against (wide row vs rail icon).
+ */
+export interface SidebarSettingsOwnerProps {
+  /** Whether the sidebar renders wide content (false = primary rail). */
+  wide: boolean
+}
+
+/** Owner share of an action rendered beside Settings at the sidebar foot. */
+export interface SidebarFooterActionOwnerProps {
+  /** Whether the sidebar renders wide content (false = primary rail). */
+  wide: boolean
+}
+
+/**
+ * Registrant-private injected share (arrives via the register inject
+ * factory). The renderer binds the panel metadata source to usePanels.
+ */
+export type SidebarRootInjected = {
+  /**
+   * Start a new ordinary Session without Project or Bot affiliation.
+   */
+  startSession: () => void
+  /** Toggle the sidebar column through the layout service. */
+  toggleSidebar: () => void
+  /** Select the global panel addressed by a sidebar row. */
+  selectPanel: (id: MainPanelId | null) => void
+  /** Private reactive sources bound to framework selector hooks. */
+  hooks: { panels: ObservableSnapshot<readonly SidebarPanelMetadata[]> }
+}
+
+/**
+ * Full component props: layout owner state/actions plus the declared holes'
+ * render shares, this package's injected callbacks, and the standard locale
+ * seat. Panel metadata arrives through an injected observable.
+ */
+export type SidebarRootComponentProps =
+  PropsRuntime<'sidebar'>
+  & PropsRenderSlots<
+    | 'sidebar.navigation.badge'
+    | 'sidebar.account'
+    | 'sidebar.brand.mark'
+    | 'sidebar.brand.name'
+    | 'sidebar.panellist'
+    | 'sidebar.personal'
+    | 'sidebar.tasks'
+    | 'sidebar.settings'
+    | 'sidebar.footer.action'
+  >
+  & InjectFace<SidebarRootInjected> & PropsLocale<'sidebar'>

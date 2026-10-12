@@ -1,0 +1,8 @@
+- dialog "添加一个 API Key 开始使用":
+  - heading "添加一个 API Key 开始使用" [level=2]
+  - paragraph: 配置模型提供方，即可开始使用 Merforge。
+  - text: API 密钥
+  - textbox "API 密钥":
+    - /placeholder: 输入 API 密钥
+  - button "稍后配置"
+  - button "保存并继续" [disabled]

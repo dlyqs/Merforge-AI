@@ -1,0 +1,52 @@
+.root {
+  --dsh-sidebar-inline-padding: 0px;
+  display: flex;
+  position: relative;
+  height: 100%;
+  min-width: 0;
+  color: var(--dsw-alias-label-primary);
+}
+.root.quietBars {
+  --dsh-scrollbar-thumb: transparent;
+  --dsh-scrollbar-thumb-hover: transparent;
+}
+.rail {
+  box-sizing: border-box;
+  display: flex;
+  flex: 0 0 72px;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  min-height: 0;
+  padding: 20px 8px 12px;
+  border-right: 0.5px solid var(--dsw-alias-border-l3);
+  background: var(--dsw-alias-bg-module-platform);
+}
+:global(html:is([data-platform='darwin'], [data-platform='win32'])) .rail { padding-top: 52px; }
+:global(html:is([data-platform='darwin'], [data-platform='win32'])[data-fullscreen]) .rail { padding-top: 20px; }
+
+.createButton, .navButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+.createButton { width: 36px; height: 36px; background: var(--dsw-alias-bg-layer-2); }
+.panelList { display: flex; flex-direction: column; gap: 6px; width: 100%; overflow-y: auto; min-height: 0; }
+.navButton { flex-direction: column; gap: 5px; width: 100%; min-height: 58px; padding: 8px 2px; font-size: 11px; line-height: 15px; }
+.navButton span { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.navButton[aria-current='page'] { color: var(--dsw-alias-state-business-primary); background: color-mix(in srgb, var(--dsw-alias-state-business-primary) 11%, transparent); }
+:is(.navButton, .createButton):hover { background: var(--dsw-alias-interactive-bg-hover); }
+:is(.navButton, .createButton):focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
+.footArea { display: flex; flex-direction: column; align-items: center; gap: 8px; flex-shrink: 0; width: 100%; margin-top: auto; padding-top: 12px; }
+.settingsArea { width: 100%; display: flex; justify-content: center; }
+.secondary { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; background: var(--dsw-specific-sidebar-fill); }
+.regionArea { display: flex; flex: 1; min-height: 0; min-width: 0; padding: 12px 10px; }
+
+.navButton { position: relative; }

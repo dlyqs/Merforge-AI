@@ -1,0 +1,33 @@
+{
+  "extends": "../../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types"
+  },
+  "include": [
+    "src"
+  ],
+  "references": [
+    {
+      "path": "../../../vendor/cordis"
+    },
+    {
+      "path": "../../util/brand"
+    },
+    {
+      "path": "../../workspace/organization"
+    },
+    {
+      "path": "../../api/organization-api"
+    },
+    {
+      "path": "../../workspace/organization-context"
+    },
+    {
+      "path": "../../workspace/organization-execution"
+    },
+    {
+      "path": "../../workspace/organization-conversation"
+    }
+  ]
+}

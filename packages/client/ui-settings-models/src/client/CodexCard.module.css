@@ -1,0 +1,63 @@
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.facts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 0;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l4);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.accountRow {
+  flex-wrap: wrap;
+}
+
+.facts > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.facts dt {
+  color: var(--dsw-alias-label-tertiary);
+}
+
+.facts dd {
+  margin: 0;
+  color: var(--dsw-alias-label-secondary);
+}
+
+.device {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding-top: 12px;
+  border-top: 0.5px solid var(--dsw-alias-border-l4);
+  font-size: 14px;
+  line-height: 22px;
+}
+
+.deviceActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.code {
+  max-width: 240px;
+  letter-spacing: 2px;
+  font-family: var(--ds-font-family-code);
+}
+
+.code input {
+  letter-spacing: inherit;
+  font-family: inherit;
+}

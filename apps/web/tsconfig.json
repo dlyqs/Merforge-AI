@@ -1,0 +1,114 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": ".",
+    "outDir": "lib/types",
+    "jsx": "react-jsx",
+    "lib": [
+      "ES2024",
+      "DOM",
+      "DOM.Iterable"
+    ],
+    "types": [
+      "node"
+    ]
+  },
+  "include": [
+    "src",
+    "tests"
+  ],
+  // The web e2e lane (scaffold + replay specs) boots the host spine and reads
+  // its Context merges — host-plane programs, checked in tsconfig.host.json;
+  // this client-registered project must not also hold them (one program
+  // cannot see both sides of the cordis Context merges).
+  "exclude": [
+    "tests/diff-context.e2e.ts",
+    "tests/code-card-layout.e2e.ts",
+    "tests/scaffold.ts",
+    "tests/voice-setup.e2e.ts",
+    "tests/voice-download.e2e.ts",
+    "tests/prefix-proxy.ts",
+    "tests/auto-review-fixture.ts",
+    "tests/scaffold-hermetic.e2e.ts",
+    "tests/startup-rpc-budget.e2e.ts",
+    "tests/chat-scroll-fixture.ts",
+    "tests/trajectory-virtualization.e2e.ts",
+    "tests/reasoning-preview.e2e.ts",
+    "tests/sessionless-header.e2e.ts",
+    "tests/office-fixture.ts",
+    "tests/plugin-config.e2e.ts",
+    "tests/input-plugin-extensions.e2e.ts",
+    "tests/plugin-manager.e2e.ts",
+    "tests/plugin-install-cancel.e2e.ts",
+    "tests/plugin-install-approve.e2e.ts",
+    "tests/plugin-install-registry.e2e.ts",
+    "tests/plugin-install-github.e2e.ts",
+    "tests/settings-chrome.e2e.ts",
+    "tests/desktop-locale.e2e.ts",
+    "tests/settings-import.e2e.ts",
+    "tests/desktop-updates.e2e.ts",
+    "tests/developer-tools-settings.e2e.ts",
+    "tests/models-settings.e2e.ts",
+    "tests/deepseek-messages-settings.e2e.ts",
+    "tests/models-settings-recovery.e2e.ts",
+    "tests/default-model.e2e.ts",
+    "tests/new-session-refused.e2e.ts",
+    "tests/declared-reasoning.e2e.ts",
+    "tests/onboarding-deepseek-config.e2e.ts",
+    "tests/onboarding-native.e2e.ts",
+    "tests/onboarding-usable-provider.e2e.ts",
+    "tests/remote-welcome.e2e.ts",
+    "tests/public-mount.e2e.ts",
+    "tests/session-archive-active.e2e.ts",
+    "tests/stats-paged-history.e2e.ts",
+    "tests/rail-search-expand.e2e.ts",
+    "tests/composer-draft-scroll.e2e.ts",
+    "tests/composer-placeholder.e2e.ts",
+    "tests/markdown-images.e2e.ts",
+    "tests/reference-composer.e2e.ts",
+    "tests/markdown-wide-table.e2e.ts",
+    "tests/thinking-markdown.e2e.ts",
+    "tests/math-rendering.e2e.ts",
+    "tests/markdown-cjk-strong.e2e.ts",
+    "tests/markdown-inline-code-links.e2e.ts",
+    "tests/clickable-links-gallery.e2e.ts",
+    "tests/cold-blank-session.e2e.ts",
+    "tests/blank-writer-reuse.e2e.ts",
+    "tests/skill-invocation-policy.e2e.ts",
+    "tests/skill-user-invoke.e2e.ts",
+    "tests/access-confirmation.e2e.ts",
+    "tests/shipped-composition.e2e.ts",
+    "tests/sidebar-right.e2e.ts",
+    "tests/sidebar-terminal.e2e.ts",
+    "tests/startup-auto-selection.e2e.ts",
+    "tests/produced-file-mentions.e2e.ts",
+    "tests/goal-bar.e2e.ts",
+    "tests/goal-command-presentation.e2e.ts",
+    "tests/subagent-interrupt.e2e.ts",
+    "tests/sidebar-subagent-activity.e2e.ts",
+    "tests/chat-scroll-fixture.ts",
+    "tests/chat-scroll-contract.e2e.ts",
+    "tests/chat-long-interactions.e2e.ts",
+    "tests/chat-continuous-conversation.e2e.ts",
+    "tests/composer-tab-geometry.e2e.ts",
+    "tests/complex-history.perf.ts"
+  ],
+  "references": [
+    { "path": "../../packages/experimental/auto-review" },
+    {
+      "path": "../../packages/client/store"
+    },
+    {
+      "path": "../../packages/client/web"
+    },
+    {
+      "path": "../../packages/client/modules"
+    },
+    {
+      "path": "../../packages/test-support/client-runtime"
+    },
+    {
+      "path": "../../packages/test-support/remote-mock"
+    }
+  ]
+}

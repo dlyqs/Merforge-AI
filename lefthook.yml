@@ -1,0 +1,3 @@
+# Automatic pre-commit checks are disabled. Run relevant checks explicitly.
+pre-commit:
+  jobs: []
